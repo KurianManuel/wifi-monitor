@@ -1,0 +1,38 @@
+# Python virtual environment
+.venv/
+venv/
+ENV/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Environment and secrets
+.env
+.env.local
+router_session.json
+
+# SQLite Database & logs
+*.db
+*.db-journal
+*.db-wal
+*.db-shm
+data/*.db
+data/*.db-journal
+data/*.db-wal
+data/*.db-shm
+*.log
+
+# Pytest and coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Old implementation reference (kept separate from clean git history)
+wifi-monitor-old/
+
+# IDE / OS
+.vscode/
+.idea/
+.DS_Store
+Thumbs.db
