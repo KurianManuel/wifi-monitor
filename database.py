@@ -2,13 +2,18 @@
 Database layer for Jio WiFi Data Tracker.
 
 Uses SQLite with WAL mode optimized for Raspberry Pi Zero 2 W.
-Stores traffic samples and provides aggregated queries.
+Stores traffic samples and provides aggregated queries, retention pruning,
+and comprehensive inspection utilities.
 
-Direction Semantics:
+Critical Traffic Direction Semantics:
 - download_bytes = delta of router current_tx
 - upload_bytes = delta of router current_rx
+DO NOT REVERSE THIS.
 """
 
+import argparse
+import json
+import logging
 import os
 import sqlite3
 from contextlib import contextmanager
@@ -17,6 +22,8 @@ from pathlib import Path
 from typing import Any, Dict, Generator, List, Optional, Tuple
 
 from config import config
+
+logger = logging.getLogger("jio_wifi_tracker.database")
 
 
 def get_db_path(db_path: Optional[str] = None) -> str:
@@ -216,3 +223,161 @@ def get_network_stats_summary(db_path: Optional[str] = None) -> Dict[str, int]:
             "dropped_rx": 0, "dropped_tx": 0,
             "download_bytes": 0, "upload_bytes": 0
         }
+
+
+# ==============================================================================
+# RETENTION MANAGEMENT
+# ==============================================================================
+def purge_old_samples(retention_days: Optional[int] = None, db_path: Optional[str] = None) -> int:
+    """
+    Purge traffic samples older than retention_days.
+    If retention_days <= 0 or not set, retention is disabled and 0 rows are deleted.
+    """
+    days = retention_days if retention_days is not None else config.DATA_RETENTION_DAYS
+    if days <= 0:
+        logger.debug("Retention pruning skipped: DATA_RETENTION_DAYS is 0 (retain indefinitely).")
+        return 0
+
+    cutoff = (datetime.now() - timedelta(days=days)).isoformat()
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("DELETE FROM traffic_samples WHERE timestamp < ?;", (cutoff,))
+        deleted_count = cursor.rowcount
+        logger.info("Purged %d traffic samples older than %s (retention: %d days)", deleted_count, cutoff, days)
+        return deleted_count
+
+
+# ==============================================================================
+# DATABASE INSPECTION UTILITIES
+# ==============================================================================
+def inspect_tables(db_path: Optional[str] = None) -> List[str]:
+    """List all tables in the database."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name FROM sqlite_master WHERE type='table' ORDER BY name;")
+        return [row["name"] for row in cursor.fetchall()]
+
+
+def inspect_schema(db_path: Optional[str] = None) -> Dict[str, str]:
+    """Return SQL DDL schemas for all tables and indexes."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT name, sql FROM sqlite_master WHERE sql IS NOT NULL ORDER BY type, name;")
+        return {row["name"]: row["sql"] for row in cursor.fetchall()}
+
+
+def inspect_latest_samples(limit: int = 5, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Retrieve the most recent traffic samples."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT * FROM traffic_samples ORDER BY timestamp DESC, id DESC LIMIT ?;", (limit,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def inspect_device_count(db_path: Optional[str] = None) -> int:
+    """Count total known devices."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("SELECT COUNT(*) as count FROM devices;")
+        row = cursor.fetchone()
+        return row["count"] if row else 0
+
+
+def inspect_hourly_usage(date_prefix: Optional[str] = None, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Inspect hourly usage breakdown for a given date (default today)."""
+    prefix = date_prefix or datetime.now().strftime("%Y-%m-%d")
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                SUBSTR(timestamp, 12, 2) as hour,
+                COALESCE(SUM(download_bytes), 0) as download_bytes,
+                COALESCE(SUM(upload_bytes), 0) as upload_bytes,
+                COALESCE(SUM(download_bytes + upload_bytes), 0) as total_bytes
+            FROM traffic_samples
+            WHERE timestamp LIKE ? || '%'
+            GROUP BY SUBSTR(timestamp, 12, 2)
+            ORDER BY hour ASC;
+        """, (prefix,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def inspect_daily_usage(limit_days: int = 7, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Inspect daily usage for the last N days."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                SUBSTR(timestamp, 1, 10) as day,
+                COALESCE(SUM(download_bytes), 0) as download_bytes,
+                COALESCE(SUM(upload_bytes), 0) as upload_bytes,
+                COALESCE(SUM(download_bytes + upload_bytes), 0) as total_bytes
+            FROM traffic_samples
+            GROUP BY SUBSTR(timestamp, 1, 10)
+            ORDER BY day DESC
+            LIMIT ?;
+        """, (limit_days,))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+def inspect_device_history(mac_address: str, limit_days: int = 7, db_path: Optional[str] = None) -> List[Dict[str, Any]]:
+    """Inspect daily history for a specific device."""
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute("""
+            SELECT 
+                SUBSTR(timestamp, 1, 10) as day,
+                COALESCE(SUM(download_bytes), 0) as download_bytes,
+                COALESCE(SUM(upload_bytes), 0) as upload_bytes,
+                COALESCE(SUM(download_bytes + upload_bytes), 0) as total_bytes
+            FROM traffic_samples
+            WHERE mac_address = ?
+            GROUP BY SUBSTR(timestamp, 1, 10)
+            ORDER BY day DESC
+            LIMIT ?;
+        """, (mac_address.upper(), limit_days))
+        return [dict(row) for row in cursor.fetchall()]
+
+
+# ==============================================================================
+# CLI COMMAND DISPATCHER
+# ==============================================================================
+if __name__ == "__main__":
+    parser = argparse.ArgumentParser(description="Jio WiFi Data Tracker Database Utilities")
+    parser.add_argument("--init", action="store_true", help="Initialize database tables and indexes")
+    parser.add_argument("--tables", action="store_true", help="List database tables")
+    parser.add_argument("--schema", action="store_true", help="Inspect database schema")
+    parser.add_argument("--latest", type=int, nargs="?", const=5, help="Inspect latest N samples (default 5)")
+    parser.add_argument("--devices", action="store_true", help="Inspect total registered devices")
+    parser.add_argument("--hourly", action="store_true", help="Inspect today's hourly usage")
+    parser.add_argument("--daily", type=int, nargs="?", const=7, help="Inspect last N daily usage (default 7)")
+    parser.add_argument("--device-history", type=str, help="Inspect history for specific MAC address")
+    parser.add_argument("--network-stats", action="store_true", help="Inspect network counters")
+    parser.add_argument("--purge", type=int, help="Purge records older than N days")
+
+    args = parser.parse_args()
+
+    if args.init:
+        init_db()
+        print(f"Database initialized at {get_db_path()}")
+    elif args.tables:
+        print(json.dumps(inspect_tables(), indent=2))
+    elif args.schema:
+        print(json.dumps(inspect_schema(), indent=2))
+    elif args.latest is not None:
+        print(json.dumps(inspect_latest_samples(args.latest), indent=2))
+    elif args.devices:
+        print(f"Total devices: {inspect_device_count()}")
+    elif args.hourly:
+        print(json.dumps(inspect_hourly_usage(), indent=2))
+    elif args.daily is not None:
+        print(json.dumps(inspect_daily_usage(args.daily), indent=2))
+    elif args.device_history:
+        print(json.dumps(inspect_device_history(args.device_history), indent=2))
+    elif args.network_stats:
+        print(json.dumps(get_network_stats_summary(), indent=2))
+    elif args.purge is not None:
+        deleted = purge_old_samples(args.purge)
+        print(f"Purged {deleted} records older than {args.purge} days.")
+    else:
+        parser.print_help()

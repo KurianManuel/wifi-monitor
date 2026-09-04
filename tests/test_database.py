@@ -1,5 +1,5 @@
 """
-Unit tests for database.py SQLite storage and queries.
+Unit tests for database.py SQLite storage, retention, and inspection queries (Phase 3).
 """
 
 import os
@@ -75,7 +75,6 @@ def test_insert_sample_preserves_direction_semantics(temp_db):
 
 def test_total_usage_between(temp_db):
     """Test aggregation query between timestamp bounds."""
-    # Insert 2 samples
     s1 = {
         "timestamp": "2026-09-04T08:00:00+05:30",
         "mac_address": "AA:BB:CC:DD:EE:01",
@@ -123,3 +122,62 @@ def test_network_stats_summary(temp_db):
     assert stats["errors_tx"] == 2
     assert stats["dropped_rx"] == 3
     assert stats["dropped_tx"] == 4
+
+
+def test_retention_purge(temp_db):
+    """Test purge_old_samples retention logic."""
+    old_time = (datetime.now() - timedelta(days=40)).isoformat()
+    recent_time = (datetime.now() - timedelta(days=2)).isoformat()
+
+    database.insert_sample({"timestamp": old_time, "mac_address": "AA:11", "download_bytes": 100}, temp_db)
+    database.insert_sample({"timestamp": recent_time, "mac_address": "AA:22", "download_bytes": 200}, temp_db)
+
+    # Retention = 0 means do not purge
+    deleted_zero = database.purge_old_samples(0, temp_db)
+    assert deleted_zero == 0
+
+    # Retention = 30 days purges sample from 40 days ago
+    deleted_purged = database.purge_old_samples(30, temp_db)
+    assert deleted_purged == 1
+
+    # Recent sample still exists
+    remaining = database.inspect_latest_samples(10, temp_db)
+    assert len(remaining) == 1
+    assert remaining[0]["mac_address"] == "AA:22"
+
+
+def test_database_inspection_helpers(temp_db):
+    """Verify all database inspection utilities."""
+    # Test tables & schema inspection
+    tables = database.inspect_tables(temp_db)
+    assert "traffic_samples" in tables
+    assert "devices" in tables
+
+    schema = database.inspect_schema(temp_db)
+    assert "traffic_samples" in schema
+    assert "idx_samples_timestamp_mac" in schema
+
+    # Test device count
+    assert database.inspect_device_count(temp_db) == 0
+    database.upsert_device({"mac_address": "AA:BB:CC:11:22:33", "hostname": "Phone"}, temp_db)
+    assert database.inspect_device_count(temp_db) == 1
+
+    # Test latest samples
+    now_iso = datetime.now().isoformat()
+    database.insert_sample({"timestamp": now_iso, "mac_address": "AA:BB:CC:11:22:33", "download_bytes": 50, "upload_bytes": 25}, temp_db)
+    latest = database.inspect_latest_samples(5, temp_db)
+    assert len(latest) == 1
+    assert latest[0]["mac_address"] == "AA:BB:CC:11:22:33"
+
+    # Test daily and hourly inspection
+    daily = database.inspect_daily_usage(7, temp_db)
+    assert len(daily) >= 1
+    assert daily[0]["download_bytes"] == 50
+
+    hourly = database.inspect_hourly_usage(now_iso[:10], temp_db)
+    assert len(hourly) >= 1
+
+    # Test device history
+    dev_hist = database.inspect_device_history("AA:BB:CC:11:22:33", 7, temp_db)
+    assert len(dev_hist) >= 1
+    assert dev_hist[0]["total_bytes"] == 75
