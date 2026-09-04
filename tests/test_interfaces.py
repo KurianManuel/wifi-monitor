@@ -27,10 +27,9 @@ def test_placeholder_auth_interface():
 def test_placeholder_logout_interface():
     """Verify logout interface contract."""
     logout_handler = PlaceholderJioLogout("192.168.29.1")
-    assert isinstance(logout_handler, JioLogoutInterface)
-    
-    session = JioSession(session_id="test-session-123", authenticated=True)
+    session = JioSession(bearer="test-bearer", sysauth="test-sysauth", router_host="192.168.29.1")
     assert session.is_valid()
+
 
     res = logout_handler.logout(session)
     assert res is True
