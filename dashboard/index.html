@@ -15,7 +15,7 @@
     <!-- Top Navigation & Status Bar -->
     <header class="app-header" role="banner">
       <div class="header-brand">
-        <div class="brand-badge">JIO</div>
+        <div class="brand-badge" id="brandBadge">JIO</div>
         <div class="brand-title">
           <h1>WIFI DATA TRACKER</h1>
           <span class="router-model" id="routerIdentity">Jio Router</span>
@@ -55,7 +55,7 @@
       
       <!-- ================= SECTION: OVERVIEW ================= -->
       <section class="tab-pane active" id="pane-overview" aria-labelledby="tab-overview">
-        <!-- Overview Summary Cards -->
+        <!-- Overview Summary Cards (4 Primary Cards) -->
         <div class="card-grid four-cards">
           <div class="stat-card" id="cardTotalUsage">
             <span class="card-title">TOTAL USAGE TODAY</span>
@@ -73,9 +73,9 @@
             <div class="card-subtext">Router RX Delta</div>
           </div>
           <div class="stat-card" id="cardDevices">
-            <span class="card-title">ACTIVE DEVICES</span>
+            <span class="card-title">DEVICES</span>
             <div class="card-value" id="valActiveDevices">0</div>
-            <div class="card-subtext">Connected clients</div>
+            <div class="card-subtext" id="valDevicesSubtext">0 active / 0 registered</div>
           </div>
         </div>
 
@@ -108,30 +108,38 @@
           </div>
         </div>
 
-        <!-- Network Quick Status & Overview Table -->
+        <!-- Network Quick Status & Network Stats Panels -->
         <div class="dashboard-grid two-column">
-          <!-- Network Mini Status -->
-          <div class="panel-box">
+          <!-- Compact Network Status Card -->
+          <div class="panel-box" id="networkStatusCard">
             <div class="panel-header">
               <h2>NETWORK STATUS</h2>
             </div>
             <div class="panel-body" id="networkOverviewStatus">
               <div class="info-list">
                 <div class="info-row">
-                  <span class="info-key">Router Model</span>
-                  <span class="info-val" id="infoRouterModel">JioFiber / JioAirFiber</span>
+                  <span class="info-key">Router Status</span>
+                  <span class="info-val" id="netCardRouterStatus">Online</span>
                 </div>
                 <div class="info-row">
-                  <span class="info-key">Router Gateway</span>
-                  <span class="info-val" id="infoRouterHost">192.168.29.1</span>
+                  <span class="info-key">Connection Status</span>
+                  <span class="info-val" id="netCardConnStatus">Connected</span>
                 </div>
                 <div class="info-row">
-                  <span class="info-key">Operating Mode</span>
-                  <span class="info-val" id="infoOperatingMode">MOCK / ACTIVE</span>
+                  <span class="info-key">Last Updated</span>
+                  <span class="info-val" id="netCardLastUpdated">--:--:--</span>
                 </div>
                 <div class="info-row">
-                  <span class="info-key">Timezone</span>
-                  <span class="info-val">Asia/Kolkata (IST)</span>
+                  <span class="info-key">Today Download</span>
+                  <span class="info-val highlight-orange" id="netCardDownload">0 B</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-key">Today Upload</span>
+                  <span class="info-val highlight-teal" id="netCardUpload">0 B</span>
+                </div>
+                <div class="info-row">
+                  <span class="info-key">Today Total</span>
+                  <span class="info-val" id="netCardTotal">0 B</span>
                 </div>
               </div>
             </div>
@@ -140,10 +148,12 @@
           <!-- Network Statistics Mini Panel -->
           <div class="panel-box">
             <div class="panel-header">
-              <h2>NETWORK COUNTERS</h2>
+              <h2>NETWORK STATISTICS</h2>
             </div>
             <div class="panel-body" id="networkStats">
               <div class="stats-mini-grid">
+                <div class="mini-stat"><span class="lbl">Download:</span><span class="val highlight-orange" id="netStatDownload">0 B</span></div>
+                <div class="mini-stat"><span class="lbl">Upload:</span><span class="val highlight-teal" id="netStatUpload">0 B</span></div>
                 <div class="mini-stat"><span class="lbl">Bytes RX:</span><span class="val" id="netRxBytes">0 B</span></div>
                 <div class="mini-stat"><span class="lbl">Bytes TX:</span><span class="val" id="netTxBytes">0 B</span></div>
                 <div class="mini-stat"><span class="lbl">Packets RX:</span><span class="val" id="netRxPkts">0</span></div>
@@ -160,7 +170,7 @@
         <!-- Devices Summary Table -->
         <div class="panel-box">
           <div class="panel-header">
-            <h2>TOP CONNECTED DEVICES</h2>
+            <h2>CONNECTED DEVICES</h2>
             <span class="sub-badge">Click row for full device details</span>
           </div>
           <div class="panel-body table-responsive">
@@ -186,7 +196,7 @@
 
       <!-- ================= SECTION: DEVICES ================= -->
       <section class="tab-pane" id="pane-devices" aria-labelledby="tab-devices">
-        <div class="panel-box">
+        <div class="panel-box" id="allDevicesPanel">
           <div class="panel-header">
             <h2>ALL DISCOVERED DEVICES</h2>
             <div class="header-actions">
@@ -218,15 +228,23 @@
         <div class="device-details-panel hidden" id="deviceDetails">
           <div class="panel-box">
             <div class="panel-header detail-header">
-              <div>
+              <div class="detail-header-left">
                 <button class="tech-btn secondary" id="btnBackToDevices">&larr; BACK TO DEVICES</button>
                 <h2 id="detailDeviceName" class="detail-title">Device Details</h2>
-                <span class="detail-subtitle" id="detailDeviceMac">--:--:--:--:--:--</span>
+                <div class="detail-meta">
+                  <span class="detail-subtitle" id="detailDeviceMac">--:--:--:--:--:--</span>
+                  <span class="detail-badge" id="detailDeviceIp">IP: --</span>
+                  <span class="detail-badge" id="detailDeviceRadio">Radio: --</span>
+                  <span class="detail-badge" id="detailDeviceSsid">SSID: --</span>
+                  <span class="detail-badge" id="detailDeviceAp">AP: --</span>
+                  <span class="detail-badge" id="detailDeviceLastSeen">Last Seen: --</span>
+                  <span class="badge-pill active" id="detailDeviceStatus">ONLINE</span>
+                </div>
               </div>
             </div>
             
             <div class="panel-body">
-              <!-- Device Usage Cards (4 Horizontal Grid) -->
+              <!-- Device Usage Cards (4 Horizontal Grid: Today, Yesterday, Last 7 Days, This Month) -->
               <div class="card-grid four-cards" id="deviceUsageCards">
                 <div class="stat-card">
                   <span class="card-title">TODAY</span>
@@ -267,6 +285,8 @@
                   </div>
                   <div class="panel-body" id="deviceNetworkStats">
                     <div class="stats-mini-grid">
+                      <div class="mini-stat"><span class="lbl">Download:</span><span class="val highlight-orange" id="devStatDownload">0 B</span></div>
+                      <div class="mini-stat"><span class="lbl">Upload:</span><span class="val highlight-teal" id="devStatUpload">0 B</span></div>
                       <div class="mini-stat"><span class="lbl">Bytes RX:</span><span class="val" id="devStatRxBytes">0 B</span></div>
                       <div class="mini-stat"><span class="lbl">Bytes TX:</span><span class="val" id="devStatTxBytes">0 B</span></div>
                       <div class="mini-stat"><span class="lbl">Packets RX:</span><span class="val" id="devStatRxPkts">0</span></div>
@@ -312,7 +332,8 @@
 
         <div class="panel-box" style="margin-top: 1.5rem;">
           <div class="panel-header">
-            <h2>DAILY USAGE TABLE (LAST 30 DAYS)</h2>
+            <h2>DAILY USAGE HISTORY</h2>
+            <span class="sub-badge">Aggregated IST daily traffic</span>
           </div>
           <div class="panel-body table-responsive">
             <table class="tech-table" id="dailyUsageTable">
@@ -342,7 +363,11 @@
             <div class="panel-body">
               <div class="info-list">
                 <div class="info-row"><span class="info-key">Platform Target:</span><span class="info-val">Raspberry Pi Zero 2 W</span></div>
-                <div class="info-row"><span class="info-key">Target Router:</span><span class="info-val">JioFiber / JioAirFiber</span></div>
+                <div class="info-row"><span class="info-key">Target Router:</span><span class="info-val" id="netTabRouterIdentity">JioFiber / JioAirFiber</span></div>
+                <div class="info-row"><span class="info-key">Router Gateway:</span><span class="info-val" id="netTabRouterHost">192.168.29.1</span></div>
+                <div class="info-row"><span class="info-key">Router Status:</span><span class="info-val" id="netTabRouterStatus">Online</span></div>
+                <div class="info-row"><span class="info-key">Operating Mode:</span><span class="info-val" id="netTabOperatingMode">MOCK / ACTIVE</span></div>
+                <div class="info-row"><span class="info-key">Total Known Devices:</span><span class="info-val" id="netTabKnownDevices">0</span></div>
                 <div class="info-row"><span class="info-key">Auth Mechanism:</span><span class="info-val">Jio Proprietary Session Handshake</span></div>
                 <div class="info-row"><span class="info-key">Traffic Interpretation:</span><span class="info-val">TX = Download, RX = Upload</span></div>
                 <div class="info-row"><span class="info-key">Database Mode:</span><span class="info-val">SQLite 3 (WAL mode)</span></div>
@@ -356,8 +381,10 @@
             </div>
             <div class="panel-body" id="networkTelemetryStats">
               <div class="stats-mini-grid">
-                <div class="mini-stat"><span class="lbl">Total Download:</span><span class="val" id="netFullDownload">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Total Upload:</span><span class="val" id="netFullUpload">0 B</span></div>
+                <div class="mini-stat"><span class="lbl">Total Download:</span><span class="val highlight-orange" id="netFullDownload">0 B</span></div>
+                <div class="mini-stat"><span class="lbl">Total Upload:</span><span class="val highlight-teal" id="netFullUpload">0 B</span></div>
+                <div class="mini-stat"><span class="lbl">Bytes RX:</span><span class="val" id="netFullRxBytes">0 B</span></div>
+                <div class="mini-stat"><span class="lbl">Bytes TX:</span><span class="val" id="netFullTxBytes">0 B</span></div>
                 <div class="mini-stat"><span class="lbl">Packets RX:</span><span class="val" id="netFullRxPkts">0</span></div>
                 <div class="mini-stat"><span class="lbl">Packets TX:</span><span class="val" id="netFullTxPkts">0</span></div>
                 <div class="mini-stat"><span class="lbl">Errors RX:</span><span class="val" id="netFullRxErrors">0</span></div>
@@ -380,12 +407,13 @@
           <div class="panel-body">
             <div class="info-list">
               <div class="info-row"><span class="info-key">Router Host:</span><span class="info-val" id="cfgRouterHost">192.168.29.1</span></div>
-              <div class="info-row"><span class="info-key">Router Username:</span><span class="info-val" id="cfgRouterUser">admin</span></div>
-              <div class="info-row"><span class="info-key">Credentials:</span><span class="info-val status-secure">[PROTECTED - NEVER DISPLAYED]</span></div>
+              <div class="info-row"><span class="info-key">Router Identity:</span><span class="info-val" id="cfgRouterIdentity">Jio Router</span></div>
+              <div class="info-row"><span class="info-key">Router Mode:</span><span class="info-val" id="cfgRouterMode">mock</span></div>
+              <div class="info-row"><span class="info-key">Credentials & Tokens:</span><span class="info-val status-secure">[PROTECTED - NEVER DISPLAYED]</span></div>
               <div class="info-row"><span class="info-key">Collection Interval:</span><span class="info-val" id="cfgCollectionInterval">60 seconds</span></div>
               <div class="info-row"><span class="info-key">Dashboard Refresh:</span><span class="info-val" id="cfgRefreshInterval">15 seconds</span></div>
-              <div class="info-row"><span class="info-key">Timezone:</span><span class="info-val">Asia/Kolkata (IST)</span></div>
-              <div class="info-row"><span class="info-key">Database Path:</span><span class="info-val" id="cfgDbPath">data/traffic.db</span></div>
+              <div class="info-row"><span class="info-key">Timezone Standard:</span><span class="info-val">Asia/Kolkata (IST)</span></div>
+              <div class="info-row"><span class="info-key">Database Path:</span><span class="info-val" id="cfgDbPath">data/traffic.db (SQLite WAL)</span></div>
             </div>
           </div>
         </div>
@@ -398,21 +426,25 @@
             <h2>ABOUT JIO WIFI DATA TRACKER</h2>
           </div>
           <div class="panel-body text-content">
-            <p><strong>JIO WIFI DATA TRACKER</strong> is a dedicated network telemetry and traffic monitor built specifically for <strong>JioFiber</strong> and <strong>JioAirFiber</strong> home gateway routers.</p>
+            <p><strong>JIO WIFI DATA TRACKER</strong> is a dedicated telemetry and bandwidth monitoring console engineered specifically for <strong>JioFiber</strong> and <strong>JioAirFiber</strong> home gateway routers.</p>
             
             <h3>Key Architecture Highlights:</h3>
             <ul>
-              <li><strong>Zero-Overhead Target:</strong> Purpose-built for the Raspberry Pi Zero 2 W with minimal CPU and RAM usage.</li>
+              <li><strong>Zero-Overhead Target:</strong> Purpose-built for the Raspberry Pi Zero 2 W with minimal CPU and memory footprint.</li>
               <li><strong>Preserved Direction Semantics:</strong> Correctly maps router counter statistics (<code>current_tx delta = download_bytes</code>, <code>current_rx delta = upload_bytes</code>).</li>
-              <li><strong>Local Storage:</strong> SQLite with Write-Ahead Logging (WAL) for safe, concurrent, long-running retention.</li>
-              <li><strong>Strict Isolation:</strong> The dashboard communicates exclusively through a read-only Flask API. Credentials and router sessions are never exposed to the client.</li>
+              <li><strong>Local Storage:</strong> SQLite with Write-Ahead Logging (WAL) for safe, concurrent, long-running retention without database corruption.</li>
+              <li><strong>Strict Isolation:</strong> The web dashboard communicates exclusively through a read-only Flask API. Credentials and router sessions are never exposed to the client.</li>
               <li><strong>Timezone Standard:</strong> All date and time representations are locked to Indian Standard Time (IST, <code>Asia/Kolkata</code>) with full 24-hour retention across midnight transitions.</li>
+              <li><strong>Technology Stack:</strong> Python 3, Flask, SQLite3, Vanilla HTML5 / CSS3 / ES6 JavaScript.</li>
             </ul>
           </div>
         </div>
       </section>
 
     </main>
+
+    <!-- Global Floating Tooltip for Charts -->
+    <div id="chartTooltip" class="chart-tooltip hidden"></div>
 
     <!-- App Footer -->
     <footer class="app-footer">
