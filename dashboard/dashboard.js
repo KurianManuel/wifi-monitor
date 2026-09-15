@@ -1,881 +1,1055 @@
-/**
- * Jio WiFi Data Tracker - Modular Dashboard Client Script
- * 
- * Target: Raspberry Pi Zero 2 W & Modern Web Browsers
- * Architecture: Vanilla JS, Component-isolated error handling, Read-Only
- */
+// ============================================================
+// WiFi Monitor Dashboard
+// Terminal-inspired dark UI
+// ============================================================
 
-// Strict API base path
 const API = "/api";
+const IST_TIMEZONE = "Asia/Kolkata";
 
-// Deterministic palette for device distribution
+// ============================================================
+// State
+// ============================================================
+
+let devices = [];
+let todayUsage = null;
+let dailyHistory = [];
+let hourlyHistory = [];
+let networkStats = null;
+let selectedDevice = null;
+let currentView = "overview";
+
+// ============================================================
+// Usage distribution palette
+// ============================================================
+
 const DEVICE_COLORS = [
-  "#F06021", // Orange (Primary)
-  "#6B9CAA", // Teal / Moonstone
-  "#7E8CE0", // Lavender Blue
-  "#C17BDE", // Purple / Orchid
-  "#5FAF8F", // Sage Green
-  "#D4A84F", // Amber Gold
-  "#D66A8A", // Rose
-  "#7FA8C9", // Soft Cyan
-  "#E08543", // Warm Orange
-  "#4CA6A4"  // Dark Mint
+    "#F06021",
+    "#6B9CAA",
+    "#7E8CE0",
+    "#C17BDE",
+    "#5FAF8F",
+    "#D4A84F",
+    "#D66A8A",
+    "#7FA8C9"
 ];
 
-// Global cache for client-side search/filtering
-let allDevicesCache = [];
-let activeDeviceMac = null;
+// ============================================================
+// DOM helpers
+// ============================================================
 
-/**
- * Format bytes to readable units: B, KB, MB, GB, TB
- */
-function formatBytes(bytes, decimals = 2) {
-  if (bytes === undefined || bytes === null || isNaN(bytes)) return "0 B";
-  const b = Number(bytes);
-  if (b === 0) return "0 B";
-  const k = 1024;
-  const dm = decimals < 0 ? 0 : decimals;
-  const sizes = ["B", "KB", "MB", "GB", "TB", "PB"];
-  const i = Math.floor(Math.log(Math.abs(b)) / Math.log(k));
-  const safeI = Math.min(i, sizes.length - 1);
-  return parseFloat((b / Math.pow(k, safeI)).toFixed(dm)) + " " + sizes[safeI];
+function $(id) {
+    return document.getElementById(id);
 }
 
-/**
- * Format integers with standard locale grouping
- */
-function formatNumber(num) {
-  if (num === undefined || num === null || isNaN(num)) return "0";
-  return Number(num).toLocaleString();
+function setText(id, value) {
+    const el = $(id);
+    if (!el) return;
+    el.textContent = (value === null || value === undefined || value === "") ? "--" : value;
 }
 
-/**
- * Deterministic color assignment based on MAC or Device name
- */
-function getDeviceColor(identifier) {
-  if (!identifier) return DEVICE_COLORS[0];
-  let hash = 0;
-  for (let i = 0; i < identifier.length; i++) {
-    hash = identifier.charCodeAt(i) + ((hash << 5) - hash);
-  }
-  const index = Math.abs(hash) % DEVICE_COLORS.length;
-  return DEVICE_COLORS[index];
+function escapeHtml(value) {
+    if (value === null || value === undefined) return "";
+    return String(value)
+        .replaceAll("&", "&amp;")
+        .replaceAll("<", "&lt;")
+        .replaceAll(">", "&gt;")
+        .replaceAll('"', "&quot;")
+        .replaceAll("'", "&#039;");
 }
 
-/**
- * Standard GET helper ensuring no double API prefix and cache-control
- */
+// ============================================================
+// Formatting helpers
+// ============================================================
+
+function formatBytes(bytes) {
+    bytes = Number(bytes || 0);
+    if (bytes < 1024) return `${bytes} B`;
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(2)} KB`;
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(2)} MB`;
+    if (bytes < 1024 ** 4) return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+    return `${(bytes / 1024 ** 4).toFixed(2)} TB`;
+}
+
+function formatAxisBytes(bytes) {
+    bytes = Number(bytes || 0);
+    if (bytes === 0) return "0 B";
+    if (bytes < 1024 ** 2) return `${(bytes / 1024).toFixed(0)} KB`;
+    if (bytes < 1024 ** 3) return `${(bytes / 1024 ** 2).toFixed(0)} MB`;
+    return `${(bytes / 1024 ** 3).toFixed(2)} GB`;
+}
+
+function percentage(value, total) {
+    value = Number(value || 0);
+    total = Number(total || 0);
+    if (!total) return "0.0%";
+    return `${((value / total) * 100).toFixed(1)}%`;
+}
+
+function formatNumber(value) {
+    return Number(value || 0).toLocaleString("en-IN");
+}
+
+function getDeviceColor(index) {
+    return DEVICE_COLORS[index % DEVICE_COLORS.length];
+}
+
+function timeAgo(timestamp) {
+    if (!timestamp) return "--";
+    const date = new Date(timestamp);
+    if (Number.isNaN(date.getTime())) return "--";
+
+    const seconds = Math.floor((Date.now() - date.getTime()) / 1000);
+    if (seconds < 10) return "JUST NOW";
+    if (seconds < 60) return `${seconds}s ago`;
+    const minutes = Math.floor(seconds / 60);
+    if (minutes < 60) return `${minutes}m ago`;
+    const hours = Math.floor(minutes / 60);
+    if (hours < 24) return `${hours}h ago`;
+    const days = Math.floor(hours / 24);
+    return `${days}d ago`;
+}
+
+function formatDateTime(value) {
+    if (!value) return "--";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value);
+
+    return date.toLocaleString("en-IN", {
+        timeZone: IST_TIMEZONE,
+        year: "2-digit",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+    });
+}
+
+function getISTDateParts() {
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: IST_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit",
+        hour: "2-digit",
+        minute: "2-digit",
+        second: "2-digit",
+        hour12: false
+    });
+
+    const parts = formatter.formatToParts(new Date());
+    const result = {};
+    parts.forEach(part => {
+        if (part.type !== "literal") {
+            result[part.type] = part.value;
+        }
+    });
+    return result;
+}
+
+function updateClock() {
+    const parts = getISTDateParts();
+    const value = `${parts.year}-${parts.month}-${parts.day} ${parts.hour}:${parts.minute}:${parts.second}`;
+    if ($("clock")) {
+        $("clock").textContent = value;
+    }
+}
+
+// ============================================================
+// API helper
+// ============================================================
+
 async function getJSON(path) {
-  // Ensure path starts with /
-  const cleanPath = path.startsWith("/") ? path : `/${path}`;
-  const url = `${API}${cleanPath}`;
-  try {
-    const res = await fetch(url, {
-      headers: { "Accept": "application/json" },
-      cache: "no-store"
+    const cleanPath = path.startsWith("/") ? path : `/${path}`;
+    const url = `${API}${cleanPath}`;
+    const response = await fetch(url, {
+        cache: "no-store",
+        headers: { "Accept": "application/json" }
     });
-    if (!res.ok) {
-      throw new Error(`HTTP ${res.status} from ${url}`);
+    if (!response.ok) {
+        throw new Error(`${url} returned HTTP ${response.status}`);
     }
-    return await res.json();
-  } catch (err) {
-    console.error(`Fetch error for ${url}:`, err);
-    throw err;
-  }
+    return await response.json();
 }
 
-/**
- * Live IST Clock updater (Asia/Kolkata)
- */
-function updateISTClock() {
-  const clockEl = document.getElementById("currentClock");
-  if (!clockEl) return;
-  
-  try {
-    const now = new Date();
-    const timeOptions = {
-      timeZone: "Asia/Kolkata",
-      hour12: false,
-      hour: "2-digit",
-      minute: "2-digit",
-      second: "2-digit"
-    };
-    const timeStr = new Intl.DateTimeFormat("en-GB", timeOptions).format(now);
-    clockEl.textContent = `${timeStr} IST`;
-  } catch (e) {
-    clockEl.textContent = new Date().toLocaleTimeString();
-  }
-}
+// ============================================================
+// Loaders
+// ============================================================
 
-/**
- * Global Tooltip Management
- */
-function showTooltip(evt, textHtml) {
-  const tooltip = document.getElementById("chartTooltip");
-  if (!tooltip) return;
-  tooltip.innerHTML = textHtml;
-  tooltip.classList.remove("hidden");
-  
-  const x = evt.pageX + 10;
-  const y = evt.pageY - 35;
-  tooltip.style.left = `${x}px`;
-  tooltip.style.top = `${y}px`;
-}
-
-function hideTooltip() {
-  const tooltip = document.getElementById("chartTooltip");
-  if (tooltip) {
-    tooltip.classList.add("hidden");
-  }
-}
-
-/**
- * Load System & Router Status
- */
 async function loadStatus() {
-  try {
-    const data = await getJSON("/status");
-    
-    // Header
-    const routerIdentity = document.getElementById("routerIdentity");
-    const statusDot = document.getElementById("statusDot");
-    const connectionStatus = document.getElementById("connectionStatus");
-    const lastUpdated = document.getElementById("lastUpdated");
-    const footerMode = document.getElementById("footerModeStatus");
+    try {
+        const data = await getJSON("/status");
+        setText("api", "CONNECTED");
+        setText("database", "CONNECTED");
+        setText("collector", data.collector?.mode ? "CONNECTED" : "CONNECTED");
 
-    if (routerIdentity) routerIdentity.textContent = data.router?.identity || "Jio Router";
-    if (footerMode) footerMode.textContent = `Mode: ${(data.router?.mode || "MOCK").toUpperCase()}`;
-    
-    const isOnline = (data.status === "online" || data.router?.connected);
-    if (statusDot) {
-      statusDot.className = isOnline ? "pulse-dot" : "pulse-dot disconnected";
+        const isOnline = data.status === "online" || data.router?.connected;
+        setText("router", isOnline ? "ONLINE" : "OFFLINE");
+        setText("netRouterApi", isOnline ? "ONLINE" : "OFFLINE");
+
+        const routerIdentity = data.router?.identity || "ARACKAL NETWORK";
+        if ($("sidebarNetworkName")) $("sidebarNetworkName").textContent = routerIdentity;
+        if ($("headerNetworkName")) $("headerNetworkName").textContent = routerIdentity;
+
+        if ($("updated")) $("updated").textContent = "JUST NOW";
+
+        if ($("cfgHost")) $("cfgHost").textContent = data.router?.host || "192.168.29.1";
+        if ($("cfgInterval")) $("cfgInterval").textContent = `${data.collector?.collection_interval_seconds || 60} seconds`;
+        if ($("cfgRefresh")) $("cfgRefresh").textContent = `${data.system?.dashboard_refresh_interval_seconds || 15} seconds`;
+
+        return data;
+    } catch (err) {
+        console.error("Status error:", err);
+        setText("api", "OFFLINE");
+        setText("database", "UNKNOWN");
+        setText("collector", "UNKNOWN");
+        setText("router", "OFFLINE");
+        setText("netRouterApi", "OFFLINE");
     }
-    if (connectionStatus) {
-      connectionStatus.textContent = isOnline ? "ONLINE" : "OFFLINE";
-    }
-
-    if (lastUpdated) {
-      const now = new Date();
-      lastUpdated.textContent = now.toLocaleTimeString();
-    }
-
-    // Network Status Card
-    const netCardRouterStatus = document.getElementById("netCardRouterStatus");
-    const netCardConnStatus = document.getElementById("netCardConnStatus");
-    const netCardLastUpdated = document.getElementById("netCardLastUpdated");
-    if (netCardRouterStatus) netCardRouterStatus.textContent = data.router?.identity || "Online";
-    if (netCardConnStatus) netCardConnStatus.textContent = isOnline ? "Connected" : "Disconnected";
-    if (netCardLastUpdated) netCardLastUpdated.textContent = new Date().toLocaleTimeString();
-
-    // Network Tab
-    const netTabRouterIdentity = document.getElementById("netTabRouterIdentity");
-    const netTabRouterHost = document.getElementById("netTabRouterHost");
-    const netTabRouterStatus = document.getElementById("netTabRouterStatus");
-    const netTabOperatingMode = document.getElementById("netTabOperatingMode");
-    const netTabKnownDevices = document.getElementById("netTabKnownDevices");
-
-    if (netTabRouterIdentity) netTabRouterIdentity.textContent = data.router?.identity || "Jio Router";
-    if (netTabRouterHost) netTabRouterHost.textContent = data.router?.host || "192.168.29.1";
-    if (netTabRouterStatus) netTabRouterStatus.textContent = isOnline ? "Online" : "Offline";
-    if (netTabOperatingMode) netTabOperatingMode.textContent = (data.router?.mode || "MOCK").toUpperCase();
-    if (netTabKnownDevices) netTabKnownDevices.textContent = data.devices?.known_count ?? allDevicesCache.length;
-
-    // Settings Tab
-    const cfgRouterHost = document.getElementById("cfgRouterHost");
-    const cfgRouterIdentity = document.getElementById("cfgRouterIdentity");
-    const cfgRouterMode = document.getElementById("cfgRouterMode");
-    const cfgCollectionInterval = document.getElementById("cfgCollectionInterval");
-    const cfgRefreshInterval = document.getElementById("cfgRefreshInterval");
-
-    if (cfgRouterHost) cfgRouterHost.textContent = data.router?.host || "192.168.29.1";
-    if (cfgRouterIdentity) cfgRouterIdentity.textContent = data.router?.identity || "Jio Router";
-    if (cfgRouterMode) cfgRouterMode.textContent = data.collector?.mode || data.router?.mode || "mock";
-    if (cfgCollectionInterval) cfgCollectionInterval.textContent = `${data.collector?.collection_interval_seconds || 60} seconds`;
-    if (cfgRefreshInterval) cfgRefreshInterval.textContent = `${data.system?.dashboard_refresh_interval_seconds || 15} seconds`;
-
-  } catch (err) {
-    const statusDot = document.getElementById("statusDot");
-    const connectionStatus = document.getElementById("connectionStatus");
-    if (statusDot) statusDot.className = "pulse-dot disconnected";
-    if (connectionStatus) connectionStatus.textContent = "API OFFLINE";
-  }
 }
 
-/**
- * Load and Render Today's Overall Usage
- */
-async function loadTodayUsage() {
-  try {
-    const data = await getJSON("/usage/today");
-    const valTotalToday = document.getElementById("valTotalToday");
-    const valDownloadToday = document.getElementById("valDownloadToday");
-    const valUploadToday = document.getElementById("valUploadToday");
-
-    if (valTotalToday) valTotalToday.textContent = formatBytes(data.total_bytes);
-    if (valDownloadToday) valDownloadToday.textContent = formatBytes(data.download_bytes);
-    if (valUploadToday) valUploadToday.textContent = formatBytes(data.upload_bytes);
-
-    // Also populate Network Status Card
-    const netCardDownload = document.getElementById("netCardDownload");
-    const netCardUpload = document.getElementById("netCardUpload");
-    const netCardTotal = document.getElementById("netCardTotal");
-
-    if (netCardDownload) netCardDownload.textContent = formatBytes(data.download_bytes);
-    if (netCardUpload) netCardUpload.textContent = formatBytes(data.upload_bytes);
-    if (netCardTotal) netCardTotal.textContent = formatBytes(data.total_bytes);
-  } catch (err) {
-    const valTotalToday = document.getElementById("valTotalToday");
-    if (valTotalToday) valTotalToday.textContent = "Unavailable";
-  }
-}
-
-/**
- * Load and Render 24-Hour Timeline Chart
- * CRITICAL: Must ALWAYS contain all 24 hours (00:00 to 23:00)
- */
-async function loadHourlyUsage() {
-  const container = document.getElementById("hourlyChart");
-  if (!container) return;
-
-  try {
-    const data = await getJSON("/usage/hourly");
-    const rawHours = data.hours || [];
-    
-    // Ensure 24 hours guaranteed
-    const fullHours = [];
-    const hourMap = {};
-    rawHours.forEach(h => {
-      if (h.hour) hourMap[h.hour.substring(0, 2)] = h;
-    });
-
-    for (let i = 0; i < 24; i++) {
-      const hStr = String(i).padStart(2, "0");
-      const key = `${hStr}:00`;
-      if (hourMap[hStr]) {
-        fullHours.push(hourMap[hStr]);
-      } else {
-        fullHours.push({
-          hour: key,
-          download_bytes: 0,
-          upload_bytes: 0,
-          total_bytes: 0
-        });
-      }
-    }
-
-    renderHourlyChart(fullHours);
-  } catch (err) {
-    container.innerHTML = `<p class="placeholder-text" style="color: var(--color-danger);">HOURLY DATA UNAVAILABLE</p>`;
-  }
-}
-
-/**
- * Render 24-Hour SVG Stacked Bar Chart
- */
-function renderHourlyChart(hours) {
-  const container = document.getElementById("hourlyChart");
-  if (!container) return;
-
-  // Find max value for scaling
-  let maxBytes = 1024 * 1024; // minimum 1MB baseline
-  hours.forEach(h => {
-    const tot = (h.download_bytes || 0) + (h.upload_bytes || 0);
-    if (tot > maxBytes) maxBytes = tot;
-  });
-
-  const width = 620;
-  const height = 210;
-  const paddingLeft = 55;
-  const paddingBottom = 25;
-  const paddingTop = 15;
-  const paddingRight = 15;
-
-  const chartW = width - paddingLeft - paddingRight;
-  const chartH = height - paddingTop - paddingBottom;
-  const slotW = chartW / 24;
-  const barW = Math.max(3, slotW - 4);
-
-  let barsSvg = "";
-  let xLabels = "";
-
-  hours.forEach((item, index) => {
-    const x = paddingLeft + (index * slotW) + 2;
-    const dlBytes = item.download_bytes || 0;
-    const ulBytes = item.upload_bytes || 0;
-    const totBytes = dlBytes + ulBytes;
-
-    const dlHeight = (dlBytes / maxBytes) * chartH;
-    const ulHeight = (ulBytes / maxBytes) * chartH;
-
-    const yDl = paddingTop + chartH - dlHeight;
-    const yUl = yDl - ulHeight;
-
-    const tooltipHtml = `<strong>Hour: ${item.hour}</strong><br>Download: <span style="color:#F06021">${formatBytes(dlBytes)}</span><br>Upload: <span style="color:#6B9CAA">${formatBytes(ulBytes)}</span><br>Total: <strong>${formatBytes(totBytes)}</strong>`;
-
-    barsSvg += `
-      <g class="chart-hour-bar"
-         onmousemove="showTooltip(event, '${tooltipHtml.replace(/'/g, "\\'")}')"
-         onmouseleave="hideTooltip()">
-        <!-- Background hit area for easy hover -->
-        <rect x="${x - 1}" y="${paddingTop}" width="${barW + 2}" height="${chartH}" fill="transparent" />
-        <!-- Download (Orange) -->
-        <rect x="${x}" y="${yDl}" width="${barW}" height="${Math.max(0, dlHeight)}" fill="#F06021" rx="1" />
-        <!-- Upload (Teal) stacked on top -->
-        <rect x="${x}" y="${yUl}" width="${barW}" height="${Math.max(0, ulHeight)}" fill="#6B9CAA" rx="1" />
-      </g>
-    `;
-
-    // Render labels every 3 hours (00, 03, 06, 09, 12, 15, 18, 21, 23)
-    if (index % 3 === 0 || index === 23) {
-      xLabels += `<text x="${x + (barW / 2)}" y="${height - 6}" font-size="9" fill="#8b949e" text-anchor="middle" font-family="'JetBrains Mono', monospace">${item.hour.substring(0, 2)}:00</text>`;
-    }
-  });
-
-  // Horizontal grid lines
-  const gridLines = `
-    <line x1="${paddingLeft}" y1="${paddingTop}" x2="${width - paddingRight}" y2="${paddingTop}" stroke="#242933" stroke-dasharray="3,3" />
-    <line x1="${paddingLeft}" y1="${paddingTop + chartH / 2}" x2="${width - paddingRight}" y2="${paddingTop + chartH / 2}" stroke="#242933" stroke-dasharray="3,3" />
-    <line x1="${paddingLeft}" y1="${paddingTop + chartH}" x2="${width - paddingRight}" y2="${paddingTop + chartH}" stroke="#4D4D4D" />
-    <text x="${paddingLeft - 8}" y="${paddingTop + 4}" font-size="8" fill="#8b949e" text-anchor="end" font-family="'JetBrains Mono', monospace">${formatBytes(maxBytes, 0)}</text>
-    <text x="${paddingLeft - 8}" y="${paddingTop + chartH / 2 + 3}" font-size="8" fill="#8b949e" text-anchor="end" font-family="'JetBrains Mono', monospace">${formatBytes(maxBytes / 2, 0)}</text>
-    <text x="${paddingLeft - 8}" y="${paddingTop + chartH}" font-size="8" fill="#8b949e" text-anchor="end" font-family="'JetBrains Mono', monospace">0 B</text>
-  `;
-
-  container.innerHTML = `
-    <svg viewBox="0 0 ${width} ${height}" class="chart-svg" preserveAspectRatio="none">
-      ${gridLines}
-      ${barsSvg}
-      ${xLabels}
-    </svg>
-  `;
-}
-
-/**
- * Load and Render Connected Devices
- */
 async function loadDevices() {
-  try {
-    const data = await getJSON("/devices");
-    const devices = data.devices || [];
-    allDevicesCache = devices;
-
-    // Update active vs total count
-    const activeCount = devices.filter(d => d.is_active).length;
-    const totalCount = devices.length;
-    
-    const activeDevicesEl = document.getElementById("valActiveDevices");
-    const devicesSubtextEl = document.getElementById("valDevicesSubtext");
-    if (activeDevicesEl) activeDevicesEl.textContent = activeCount;
-    if (devicesSubtextEl) devicesSubtextEl.textContent = `${activeCount} active / ${totalCount} registered`;
-
-    renderDevices(devices);
-    renderDistribution(devices);
-  } catch (err) {
-    const overviewBody = document.getElementById("overviewDevicesBody");
-    if (overviewBody) {
-      overviewBody.innerHTML = `<tr><td colspan="7" class="table-empty" style="color: var(--color-danger);">DEVICES DATA UNAVAILABLE</td></tr>`;
+    try {
+        const data = await getJSON("/devices");
+        devices = Array.isArray(data) ? data : (data.devices || []);
+        renderOverviewDeviceTable(devices);
+        renderAllDevices(devices);
+        setText("ndev", devices.length);
+        setText("count", devices.length);
+        setText("split", `${devices.length} STORED DEVICES`);
+        return devices;
+    } catch (err) {
+        console.error("Devices error:", err);
     }
-  }
 }
 
-/**
- * Render Devices in Overview Table and Full Devices Table
- */
-function renderDevices(devices) {
-  const overviewBody = document.getElementById("overviewDevicesBody");
-  const fullBody = document.getElementById("fullDevicesBody");
-
-  if (!devices || devices.length === 0) {
-    if (overviewBody) overviewBody.innerHTML = `<tr><td colspan="7" class="table-empty">No devices active or registered yet.</td></tr>`;
-    if (fullBody) fullBody.innerHTML = `<tr><td colspan="8" class="table-empty">No devices discovered.</td></tr>`;
-    return;
-  }
-
-  // Render top devices in Overview
-  if (overviewBody) {
-    const topDevices = devices.slice(0, 8);
-    overviewBody.innerHTML = topDevices.map(dev => `
-      <tr class="clickable" onclick="openDevice('${dev.mac_address}')" title="Click to view details for ${dev.hostname || dev.mac_address}">
-        <td><strong>${dev.hostname || "Unknown Device"}</strong><br><small style="color:var(--color-text-muted); font-size:0.75rem;">${dev.mac_address}</small></td>
-        <td>${dev.ip_address || "--"}</td>
-        <td style="color:var(--color-orange);">${formatBytes(dev.download_bytes)}</td>
-        <td style="color:var(--color-teal);">${formatBytes(dev.upload_bytes)}</td>
-        <td><strong>${formatBytes(dev.total_bytes)}</strong></td>
-        <td>${dev.last_seen ? new Date(dev.last_seen).toLocaleTimeString() : "--"}</td>
-        <td><span class="badge-pill ${dev.is_active ? 'active' : 'inactive'}">${dev.is_active ? 'ONLINE' : 'IDLE'}</span></td>
-      </tr>
-    `).join("");
-  }
-
-  // Render all in Devices tab (accounting for search filter)
-  renderFullDevicesTable(devices);
+async function loadTodayUsage() {
+    try {
+        const data = await getJSON("/usage/today");
+        todayUsage = data || { download_bytes: 0, upload_bytes: 0, total_bytes: 0 };
+        renderTodayUsage();
+        return todayUsage;
+    } catch (err) {
+        console.error("Today usage error:", err);
+    }
 }
 
-/**
- * Render Full Devices Tab Table with Filtering
- */
-function renderFullDevicesTable(devices) {
-  const fullBody = document.getElementById("fullDevicesBody");
-  if (!fullBody) return;
+function renderTodayUsage() {
+    if (!todayUsage) return;
 
-  const searchInput = document.getElementById("deviceSearchInput");
-  const query = (searchInput?.value || "").trim().toLowerCase();
+    const total = Number(todayUsage.total_bytes || (Number(todayUsage.download_bytes || 0) + Number(todayUsage.upload_bytes || 0)));
+    const dl = Number(todayUsage.download_bytes || 0);
+    const ul = Number(todayUsage.upload_bytes || 0);
 
-  const filtered = query
-    ? devices.filter(d =>
-        (d.hostname && d.hostname.toLowerCase().includes(query)) ||
-        (d.mac_address && d.mac_address.toLowerCase().includes(query)) ||
-        (d.ip_address && d.ip_address.toLowerCase().includes(query)) ||
-        (d.ssid && d.ssid.toLowerCase().includes(query))
-      )
-    : devices;
+    setText("total", formatBytes(total));
+    setText("download", formatBytes(dl));
+    setText("upload", formatBytes(ul));
+    setText("td", formatBytes(dl));
+    setText("tu", formatBytes(ul));
+    setText("dp", `${percentage(dl, total)} OF TOTAL`);
+    setText("up", `${percentage(ul, total)} OF TOTAL`);
 
-  if (filtered.length === 0) {
-    fullBody.innerHTML = `<tr><td colspan="8" class="table-empty">No matching devices found.</td></tr>`;
-    return;
-  }
+    setText("nd", formatBytes(dl));
+    setText("nu", formatBytes(ul));
+    setText("nt", formatBytes(total));
 
-  fullBody.innerHTML = filtered.map(dev => `
-    <tr class="clickable" onclick="openDevice('${dev.mac_address}')" title="Click to view device telemetry">
-      <td><strong>${dev.hostname || "Unknown Device"}</strong></td>
-      <td><code>${dev.mac_address}</code></td>
-      <td>${dev.ip_address || "--"}</td>
-      <td>${dev.radio || "--"}</td>
-      <td>${dev.ssid || "--"}</td>
-      <td>${dev.ap || "--"}</td>
-      <td>${dev.last_seen ? new Date(dev.last_seen).toLocaleString() : "--"}</td>
-      <td><span class="badge-pill ${dev.is_active ? 'active' : 'inactive'}">${dev.is_active ? 'ONLINE' : 'IDLE'}</span></td>
-    </tr>
-  `).join("");
+    if ($("donutText")) {
+        $("donutText").textContent = formatBytes(total);
+    }
+
+    renderDistribution(devices, total);
 }
 
-/**
- * Render Usage Distribution Donut Chart with Deterministic Palette
- */
-function renderDistribution(devices) {
-  const container = document.getElementById("distribution");
-  if (!container) return;
+// ============================================================
+// Usage distribution
+// ============================================================
 
-  const activeWithUsage = devices.filter(d => (d.total_bytes || 0) > 0);
-  if (!activeWithUsage.length) {
-    container.innerHTML = `<p class="placeholder-text">No traffic usage recorded to distribute yet today.</p>`;
-    return;
-  }
+function renderDistribution(list, total) {
+    const container = $("distribution");
+    const donut = $("donut");
+    if (!container || !donut) return;
 
-  const grandTotal = activeWithUsage.reduce((sum, d) => sum + (d.total_bytes || 0), 0);
-  let cumulativePercent = 0;
-  const segments = [];
+    container.innerHTML = "";
 
-  activeWithUsage.forEach(dev => {
-    const bytes = dev.total_bytes || 0;
-    const percent = grandTotal > 0 ? (bytes / grandTotal) * 100 : 0;
-    const color = getDeviceColor(dev.mac_address);
-    segments.push({
-      mac: dev.mac_address,
-      name: dev.hostname || dev.mac_address.substring(dev.mac_address.length - 8),
-      bytes: bytes,
-      percent: percent,
-      color: color,
-      offset: cumulativePercent
+    if (!list || !list.length || total <= 0) {
+        donut.style.background = "conic-gradient(#4D4D4D 0deg 360deg)";
+        if ($("donutText")) $("donutText").textContent = "0 B";
+        container.innerHTML = `<div class="pending">NO USAGE RECORDED YET</div>`;
+        return;
+    }
+
+    const sorted = [...list]
+        .sort((a, b) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0))
+        .filter(d => Number(d.total_bytes || 0) > 0);
+
+    if (!sorted.length) {
+        donut.style.background = "conic-gradient(#4D4D4D 0deg 360deg)";
+        container.innerHTML = `<div class="pending">NO USAGE RECORDED YET</div>`;
+        return;
+    }
+
+    let currentAngle = 0;
+    const segments = [];
+
+    sorted.forEach((device, index) => {
+        const value = Number(device.total_bytes || 0);
+        const angle = (value / total) * 360;
+        const color = getDeviceColor(index);
+        segments.push(`${color} ${currentAngle}deg ${currentAngle + angle}deg`);
+        currentAngle += angle;
     });
-    cumulativePercent += percent;
-  });
 
-  // SVG Donut (circumference = 2 * PI * 40 = 251.327)
-  const C = 251.327;
-  let circlesSvg = "";
-  let legendItems = "";
+    if (currentAngle < 360) {
+        segments.push(`#4D4D4D ${currentAngle}deg 360deg`);
+    }
 
-  segments.forEach(seg => {
-    const strokeDash = (seg.percent / 100) * C;
-    const strokeOffset = -(seg.offset / 100) * C;
-    const tooltipHtml = `<strong>${seg.name}</strong><br>Traffic: <strong>${formatBytes(seg.bytes)}</strong><br>Share: <strong>${seg.percent.toFixed(1)}%</strong>`;
+    donut.style.background = `conic-gradient(${segments.join(", ")})`;
 
-    circlesSvg += `
-      <circle class="donut-segment" r="40" cx="50" cy="50" fill="transparent"
-        stroke="${seg.color}"
-        stroke-width="14"
-        stroke-dasharray="${strokeDash} ${C - strokeDash}"
-        stroke-dashoffset="${strokeOffset}"
-        onmousemove="showTooltip(event, '${tooltipHtml.replace(/'/g, "\\'")}')"
-        onmouseleave="hideTooltip()"
-      />
-    `;
-
-    legendItems += `
-      <div class="donut-legend-item">
-        <span class="donut-color-swatch" style="background-color: ${seg.color}"></span>
-        <span style="color: #ffffff; max-width: 120px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;" title="${seg.name}">${seg.name}</span>
-        <span style="color: var(--color-text-muted); margin-left: auto;">${formatBytes(seg.bytes)} (${seg.percent.toFixed(1)}%)</span>
-      </div>
-    `;
-  });
-
-  container.innerHTML = `
-    <div class="donut-wrapper">
-      <div class="donut-svg-container">
-        <svg viewBox="0 0 100 100" style="transform: rotate(-90deg); width: 100%; height: 100%;">
-          ${circlesSvg}
-        </svg>
-      </div>
-      <div class="donut-legend-list">
-        ${legendItems}
-      </div>
-    </div>
-  `;
+    sorted.forEach((device, index) => {
+        const value = Number(device.total_bytes || 0);
+        const color = getDeviceColor(index);
+        const row = document.createElement("div");
+        row.className = "distribution-row";
+        row.innerHTML = `
+            <span class="distribution-dot" style="background:${color}"></span>
+            <span class="distribution-name">${escapeHtml(device.hostname || device.mac_address || "Unknown")}</span>
+            <strong>${escapeHtml(formatBytes(value))}</strong>
+        `;
+        container.appendChild(row);
+    });
 }
 
-/**
- * Load and Render Network Statistics
- */
-async function loadNetworkStats() {
-  try {
-    const stats = await getJSON("/network/stats");
-    
-    // Overview mini stats
-    const netDl = document.getElementById("netStatDownload");
-    const netUl = document.getElementById("netStatUpload");
-    const rxB = document.getElementById("netRxBytes");
-    const txB = document.getElementById("netTxBytes");
-    const rxP = document.getElementById("netRxPkts");
-    const txP = document.getElementById("netTxPkts");
-    const rxE = document.getElementById("netRxErrors");
-    const txE = document.getElementById("netTxErrors");
-    const rxD = document.getElementById("netRxDropped");
-    const txD = document.getElementById("netTxDropped");
+// ============================================================
+// Overview & All Devices Tables
+// ============================================================
 
-    if (netDl) netDl.textContent = formatBytes(stats.download_bytes);
-    if (netUl) netUl.textContent = formatBytes(stats.upload_bytes);
-    if (rxB) rxB.textContent = formatBytes(stats.bytes_rx);
-    if (txB) txB.textContent = formatBytes(stats.bytes_tx);
-    if (rxP) rxP.textContent = formatNumber(stats.packets_rx);
-    if (txP) txP.textContent = formatNumber(stats.packets_tx);
-    if (rxE) rxE.textContent = formatNumber(stats.errors_rx);
-    if (txE) txE.textContent = formatNumber(stats.errors_tx);
-    if (rxD) rxD.textContent = formatNumber(stats.dropped_rx);
-    if (txD) txD.textContent = formatNumber(stats.dropped_tx);
+function renderOverviewDeviceTable(list) {
+    const tbody = $("deviceRows");
+    if (!tbody) return;
 
-    // Full Network Tab stats
-    const netFullDl = document.getElementById("netFullDownload");
-    const netFullUl = document.getElementById("netFullUpload");
-    const netFullRxB = document.getElementById("netFullRxBytes");
-    const netFullTxB = document.getElementById("netFullTxBytes");
-    const netFullRxP = document.getElementById("netFullRxPkts");
-    const netFullTxP = document.getElementById("netFullTxPkts");
-    const netFullRxE = document.getElementById("netFullRxErrors");
-    const netFullTxE = document.getElementById("netFullTxErrors");
-    const netFullRxD = document.getElementById("netFullRxDropped");
-    const netFullTxD = document.getElementById("netFullTxDropped");
+    const sorted = [...list].sort((a, b) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0));
+    tbody.innerHTML = "";
 
-    if (netFullDl) netFullDl.textContent = formatBytes(stats.download_bytes);
-    if (netFullUl) netFullUl.textContent = formatBytes(stats.upload_bytes);
-    if (netFullRxB) netFullRxB.textContent = formatBytes(stats.bytes_rx);
-    if (netFullTxB) netFullTxB.textContent = formatBytes(stats.bytes_tx);
-    if (netFullRxP) netFullRxP.textContent = formatNumber(stats.packets_rx);
-    if (netFullTxP) netFullTxP.textContent = formatNumber(stats.packets_tx);
-    if (netFullRxE) netFullRxE.textContent = formatNumber(stats.errors_rx);
-    if (netFullTxE) netFullTxE.textContent = formatNumber(stats.errors_tx);
-    if (netFullRxD) netFullRxD.textContent = formatNumber(stats.dropped_rx);
-    if (netFullTxD) netFullTxD.textContent = formatNumber(stats.dropped_tx);
-  } catch (err) {
-    const netStats = document.getElementById("networkStats");
-    if (netStats) {
-      netStats.innerHTML = `<p class="placeholder-text" style="color: var(--color-danger);">NETWORK STATISTICS UNAVAILABLE</p>`;
-    }
-  }
+    sorted.forEach(device => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>
+                <button class="device-link" data-mac="${escapeHtml(device.mac_address)}">
+                    <span class="status-dot ${device.is_active ? '' : 'offline'}"></span>
+                    ${escapeHtml(device.hostname || "Unknown")}
+                </button>
+            </td>
+            <td>${escapeHtml(device.ip_address || device.ipv4_address || "--")}</td>
+            <td class="orange">${escapeHtml(formatBytes(device.download_bytes || 0))}</td>
+            <td class="teal">${escapeHtml(formatBytes(device.upload_bytes || 0))}</td>
+            <td>${escapeHtml(formatBytes(device.total_bytes || 0))}</td>
+            <td>${escapeHtml(timeAgo(device.last_seen))}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    attachDeviceLinks(tbody);
+    setText("dc", `(${sorted.length})`);
 }
 
-/**
- * Load Historical Usage (Today, Yesterday, 7 Days, This Month, Daily Table)
- */
-async function loadUsageHistory() {
-  try {
-    const [today, yest, week, month, daily] = await Promise.allSettled([
-      getJSON("/usage/today"),
-      getJSON("/usage/yesterday"),
-      getJSON("/usage/7days"),
-      getJSON("/usage/month"),
-      getJSON("/usage/daily")
-    ]);
+function renderAllDevices(list) {
+    const tbody = $("allRows");
+    if (!tbody) return;
 
-    if (today.status === "fulfilled" && today.value) {
-      const el = document.getElementById("histTodayTotal");
-      const sub = document.getElementById("histTodaySub");
-      if (el) el.textContent = formatBytes(today.value.total_bytes);
-      if (sub) sub.textContent = `↓ ${formatBytes(today.value.download_bytes)}  ↑ ${formatBytes(today.value.upload_bytes)}`;
+    tbody.innerHTML = "";
+
+    list.forEach(device => {
+        const row = document.createElement("tr");
+        row.innerHTML = `
+            <td>
+                <button class="device-link" data-mac="${escapeHtml(device.mac_address)}">
+                    <span class="status-dot ${device.is_active ? '' : 'offline'}"></span>
+                    ${escapeHtml(device.hostname || "Unknown")}
+                </button>
+            </td>
+            <td><code>${escapeHtml(device.mac_address || "--")}</code></td>
+            <td>${escapeHtml(device.ip_address || device.ipv4_address || "--")}</td>
+            <td>${escapeHtml(device.radio || "--")}</td>
+            <td>${escapeHtml(device.ssid || "--")}</td>
+            <td>${escapeHtml(device.ap || device.ap_name || "--")}</td>
+            <td>${escapeHtml(timeAgo(device.last_seen))}</td>
+        `;
+        tbody.appendChild(row);
+    });
+
+    attachDeviceLinks(tbody);
+}
+
+function attachDeviceLinks(container) {
+    container.querySelectorAll(".device-link").forEach(btn => {
+        btn.addEventListener("click", () => {
+            openDevice(btn.dataset.mac);
+        });
+    });
+}
+
+// ============================================================
+// Hourly Network Usage Chart
+// Complete 00:00 to 23:00 (24-hour timeline)
+// ============================================================
+
+async function loadHourlyUsage() {
+    try {
+        const data = await getJSON("/usage/hourly");
+        hourlyHistory = data.hours || data.history || [];
+        renderHourlyChart();
+    } catch (err) {
+        console.error("Hourly usage error:", err);
+        const box = $("hourlyChartContainer") || document.querySelector(".chartbox");
+        if (box) box.innerHTML = `<div class="pending">HOURLY DATA UNAVAILABLE</div>`;
     }
+}
 
-    if (yest.status === "fulfilled" && yest.value) {
-      const el = document.getElementById("histYesterdayTotal");
-      const sub = document.getElementById("histYesterdaySub");
-      if (el) el.textContent = formatBytes(yest.value.total_bytes);
-      if (sub) sub.textContent = `↓ ${formatBytes(yest.value.download_bytes)}  ↑ ${formatBytes(yest.value.upload_bytes)}`;
-    }
+function renderHourlyChart() {
+    const box = $("hourlyChartContainer") || document.querySelector(".chartbox");
+    if (!box) return;
 
-    if (week.status === "fulfilled" && week.value) {
-      const el = document.getElementById("hist7DaysTotal");
-      const sub = document.getElementById("hist7DaysSub");
-      if (el) el.textContent = formatBytes(week.value.total_bytes);
-      if (sub) sub.textContent = `↓ ${formatBytes(week.value.download_bytes)}  ↑ ${formatBytes(week.value.upload_bytes)}`;
-    }
+    const width = 1000;
+    const height = 390;
+    const paddingLeft = 92;
+    const paddingRight = 30;
+    const paddingTop = 30;
+    const paddingBottom = 62;
 
-    if (month.status === "fulfilled" && month.value) {
-      const el = document.getElementById("histMonthTotal");
-      const sub = document.getElementById("histMonthSub");
-      if (el) el.textContent = formatBytes(month.value.total_bytes);
-      if (sub) sub.textContent = `↓ ${formatBytes(month.value.download_bytes)}  ↑ ${formatBytes(month.value.upload_bytes)}`;
-    }
+    const graphWidth = width - paddingLeft - paddingRight;
+    const graphHeight = height - paddingTop - paddingBottom;
 
-    // Daily Table
-    const dailyBody = document.getElementById("dailyUsageBody");
-    if (dailyBody) {
-      if (daily.status === "fulfilled" && daily.value && daily.value.days) {
-        const days = daily.value.days;
-        if (days.length === 0) {
-          dailyBody.innerHTML = `<tr><td colspan="4" class="table-empty">No daily history recorded yet.</td></tr>`;
-        } else {
-          // Display in descending order for natural timeline reading
-          const sortedDays = [...days].reverse();
-          dailyBody.innerHTML = sortedDays.map(d => {
-            const dateStr = d.date || d.day || "--";
-            return `
-              <tr>
-                <td><strong>${dateStr}</strong></td>
-                <td style="color:var(--color-orange);">${formatBytes(d.download_bytes)}</td>
-                <td style="color:var(--color-teal);">${formatBytes(d.upload_bytes)}</td>
-                <td><strong>${formatBytes(d.total_bytes)}</strong></td>
-              </tr>
-            `;
-          }).join("");
+    const ist = getISTDateParts();
+
+    // Map existing hours
+    const hourlyMap = {};
+    (hourlyHistory || []).forEach(item => {
+        let hourNum = null;
+        if (item.hour !== undefined) {
+            const m = String(item.hour).match(/(\d{2}):\d{2}/);
+            if (m) hourNum = Number(m[1]);
+            else hourNum = Number(item.hour);
         }
-      } else {
-        dailyBody.innerHTML = `<tr><td colspan="4" class="table-empty" style="color:var(--color-danger);">Failed to load daily usage table.</td></tr>`;
-      }
-    }
-  } catch (err) {
-    console.error("Failed to load usage history:", err);
-  }
-}
+        if (hourNum !== null && hourNum >= 0 && hourNum <= 23) {
+            hourlyMap[hourNum] = {
+                download: Number(item.download_bytes || 0),
+                upload: Number(item.upload_bytes || 0)
+            };
+        }
+    });
 
-/**
- * Open Device Details view
- * Uses: /api/devices/<mac>, /api/devices/<mac>/daily, /api/devices/<mac>/stats
- */
-async function openDevice(mac) {
-  const panel = document.getElementById("deviceDetails");
-  if (!panel) return;
-
-  activeDeviceMac = mac;
-
-  // Switch tab to devices if not already there
-  const tabBtn = document.getElementById("tab-devices");
-  if (tabBtn && !tabBtn.classList.contains("active")) {
-    tabBtn.click();
-  }
-
-  panel.classList.remove("hidden");
-  panel.scrollIntoView({ behavior: "smooth", block: "start" });
-
-  const nameEl = document.getElementById("detailDeviceName");
-  const macEl = document.getElementById("detailDeviceMac");
-  const ipEl = document.getElementById("detailDeviceIp");
-  const radioEl = document.getElementById("detailDeviceRadio");
-  const ssidEl = document.getElementById("detailDeviceSsid");
-  const apEl = document.getElementById("detailDeviceAp");
-  const lastSeenEl = document.getElementById("detailDeviceLastSeen");
-  const statusEl = document.getElementById("detailDeviceStatus");
-
-  if (nameEl) nameEl.textContent = "Loading Device Details...";
-  if (macEl) macEl.textContent = mac;
-
-  try {
-    const [devRes, dailyRes, statsRes] = await Promise.allSettled([
-      getJSON(`/devices/${mac}`),
-      getJSON(`/devices/${mac}/daily`),
-      getJSON(`/devices/${mac}/stats`)
-    ]);
-
-    // 1. Device Metadata & 4 Period Usage Cards
-    if (devRes.status === "fulfilled" && devRes.value) {
-      const dev = devRes.value;
-      if (nameEl) nameEl.textContent = dev.hostname || "Device Details";
-      if (macEl) macEl.textContent = dev.mac_address || mac;
-      if (ipEl) ipEl.textContent = `IP: ${dev.ip_address || "--"}`;
-      if (radioEl) radioEl.textContent = `Radio: ${dev.radio || "--"}`;
-      if (ssidEl) ssidEl.textContent = `SSID: ${dev.ssid || "--"}`;
-      if (apEl) apEl.textContent = `AP: ${dev.ap || "--"}`;
-      if (lastSeenEl) lastSeenEl.textContent = `Last Seen: ${dev.last_seen ? new Date(dev.last_seen).toLocaleString() : "--"}`;
-      if (statusEl) {
-        statusEl.className = dev.is_active ? "badge-pill active" : "badge-pill inactive";
-        statusEl.textContent = dev.is_active ? "ONLINE" : "IDLE";
-      }
-
-      // Populate 4 Usage Cards from /api/devices/<mac>
-      const u = dev.usage || {};
-      const t = u.today || { total_bytes: 0, download_bytes: 0, upload_bytes: 0 };
-      const y = u.yesterday || { total_bytes: 0, download_bytes: 0, upload_bytes: 0 };
-      const w = u.last_7_days || { total_bytes: 0, download_bytes: 0, upload_bytes: 0 };
-      const m = u.this_month || { total_bytes: 0, download_bytes: 0, upload_bytes: 0 };
-
-      const devToday = document.getElementById("devUsageToday");
-      const devTodaySub = document.getElementById("devUsageTodayBreakdown");
-      if (devToday) devToday.textContent = formatBytes(t.total_bytes);
-      if (devTodaySub) devTodaySub.textContent = `↓ ${formatBytes(t.download_bytes)}  ↑ ${formatBytes(t.upload_bytes)}`;
-
-      const devYest = document.getElementById("devUsageYesterday");
-      const devYestSub = document.getElementById("devUsageYesterdayBreakdown");
-      if (devYest) devYest.textContent = formatBytes(y.total_bytes);
-      if (devYestSub) devYestSub.textContent = `↓ ${formatBytes(y.download_bytes)}  ↑ ${formatBytes(y.upload_bytes)}`;
-
-      const dev7Days = document.getElementById("devUsage7Days");
-      const dev7DaysSub = document.getElementById("devUsage7DaysBreakdown");
-      if (dev7Days) dev7Days.textContent = formatBytes(w.total_bytes);
-      if (dev7DaysSub) dev7DaysSub.textContent = `↓ ${formatBytes(w.download_bytes)}  ↑ ${formatBytes(w.upload_bytes)}`;
-
-      const devMonth = document.getElementById("devUsageMonth");
-      const devMonthSub = document.getElementById("devUsageMonthBreakdown");
-      if (devMonth) devMonth.textContent = formatBytes(m.total_bytes);
-      if (devMonthSub) devMonthSub.textContent = `↓ ${formatBytes(m.download_bytes)}  ↑ ${formatBytes(m.upload_bytes)}`;
+    // Build points for all 24 hours (0 to 23)
+    const points = [];
+    for (let hour = 0; hour < 24; hour++) {
+        const val = hourlyMap[hour] || { download: 0, upload: 0 };
+        points.push({
+            hour,
+            download: val.download,
+            upload: val.upload
+        });
     }
 
-    // 2. Device 7-Day History Chart/List
-    const chartBox = document.getElementById("deviceDailyChart");
-    if (chartBox) {
-      if (dailyRes.status === "fulfilled" && dailyRes.value && dailyRes.value.days) {
-        const days = dailyRes.value.days;
-        if (days.length === 0) {
-          chartBox.innerHTML = `<p class="placeholder-text">No daily records for this device.</p>`;
-        } else {
-          chartBox.innerHTML = `
-            <div style="display: flex; flex-direction: column; gap: 0.5rem;">
-              ${days.map(d => {
-                const dateStr = d.date || d.day || "--";
-                return `
-                  <div style="display: flex; justify-content: space-between; align-items: center; font-family: 'JetBrains Mono', monospace; font-size: 0.8rem; border-bottom: 1px solid rgba(255,255,255,0.05); padding: 0.4rem 0;">
-                    <span style="font-weight:600;">${dateStr}</span>
-                    <span>
-                      <span style="color:var(--color-orange);">↓ ${formatBytes(d.download_bytes)}</span> &nbsp;|&nbsp; 
-                      <span style="color:var(--color-teal);">↑ ${formatBytes(d.upload_bytes)}</span>
-                    </span>
-                    <strong>${formatBytes(d.total_bytes)}</strong>
-                  </div>
-                `;
-              }).join("")}
+    const maxData = Math.max(...points.map(p => Math.max(p.download, p.upload)), 1);
+    let maxValue = maxData * 1.15;
+    if (maxValue < 1024 ** 2) maxValue = 1024 ** 2;
+
+    function xForHour(hour) {
+        return paddingLeft + (hour / 24) * graphWidth;
+    }
+
+    function yForValue(val) {
+        return paddingTop + graphHeight - (val / maxValue) * graphHeight;
+    }
+
+    // Grid lines (horizontal)
+    let grid = "";
+    for (let i = 0; i <= 5; i++) {
+        const ratio = i / 5;
+        const y = paddingTop + graphHeight - ratio * graphHeight;
+        const val = maxValue * ratio;
+        grid += `
+            <line x1="${paddingLeft}" y1="${y}" x2="${width - paddingRight}" y2="${y}" class="chart-grid" />
+            <text x="${paddingLeft - 16}" y="${y + 5}" text-anchor="end" class="chart-label chart-y-label">
+                ${escapeHtml(formatAxisBytes(val))}
+            </text>
+        `;
+    }
+
+    // Grid hours (vertical)
+    const gridHours = [0, 4, 8, 12, 16, 20, 24];
+    gridHours.forEach(hour => {
+        const x = xForHour(hour);
+        grid += `<line x1="${x}" y1="${paddingTop}" x2="${x}" y2="${paddingTop + graphHeight}" class="chart-grid chart-grid-vertical" />`;
+    });
+
+    // X axis labels
+    let xLabels = "";
+    gridHours.forEach(hour => {
+        const x = xForHour(hour);
+        const label = `${String(hour).padStart(2, "0")}:00`;
+        let anchor = "middle";
+        if (hour === 0) anchor = "start";
+        if (hour === 24) anchor = "end";
+        xLabels += `<text x="${x}" y="${height - 18}" text-anchor="${anchor}" class="chart-label chart-x-label">${label}</text>`;
+    });
+
+    // Points & Lines
+    const downloadPoints = [];
+    const uploadPoints = [];
+    let downloadDots = "";
+    let uploadDots = "";
+    let hoverAreas = "";
+
+    points.forEach(point => {
+        const x = xForHour(point.hour);
+        const yd = yForValue(point.download);
+        const yu = yForValue(point.upload);
+
+        downloadPoints.push(`${x},${yd}`);
+        uploadPoints.push(`${x},${yu}`);
+
+        downloadDots += `<circle cx="${x}" cy="${yd}" r="3.5" class="chart-download-point" />`;
+        uploadDots += `<circle cx="${x}" cy="${yu}" r="3.5" class="chart-upload-point" />`;
+
+        hoverAreas += `
+            <rect x="${x - 18}" y="${paddingTop}" width="36" height="${graphHeight}"
+                  class="chart-hover-area"
+                  data-hour="${point.hour}"
+                  data-download="${point.download}"
+                  data-upload="${point.upload}" />
+        `;
+    });
+
+    box.innerHTML = `
+        <div class="chart-tooltip" id="hourlyTooltip">
+            <div class="tooltip-hour">--:--</div>
+            <div class="tooltip-row">
+                <span class="tooltip-dot download"></span>
+                <span>DOWNLOAD</span>
+                <strong class="tooltip-download">0 B</strong>
             </div>
-          `;
+            <div class="tooltip-row">
+                <span class="tooltip-dot upload"></span>
+                <span>UPLOAD</span>
+                <strong class="tooltip-upload">0 B</strong>
+            </div>
+            <div class="tooltip-row tooltip-total">
+                <span></span>
+                <span>TOTAL</span>
+                <strong class="tooltip-total-value">0 B</strong>
+            </div>
+        </div>
+
+        <svg viewBox="0 0 ${width} ${height}" class="usage-chart" preserveAspectRatio="none" aria-label="Hourly network usage chart">
+            ${grid}
+            <polyline points="${downloadPoints.join(" ")}" class="chart-download" fill="none" />
+            <polyline points="${uploadPoints.join(" ")}" class="chart-upload" fill="none" />
+            ${downloadDots}
+            ${uploadDots}
+            <line id="chartGuide" x1="0" y1="${paddingTop}" x2="0" y2="${paddingTop + graphHeight}" class="chart-guide" />
+            ${hoverAreas}
+            ${xLabels}
+        </svg>
+    `;
+
+    const tooltip = box.querySelector("#hourlyTooltip");
+    const guide = box.querySelector("#chartGuide");
+    const areas = box.querySelectorAll(".chart-hover-area");
+
+    function showTooltip(area) {
+        if (!tooltip) return;
+        const hour = Number(area.dataset.hour || 0);
+        const download = Number(area.dataset.download || 0);
+        const upload = Number(area.dataset.upload || 0);
+        const total = download + upload;
+
+        const hourText = `${String(hour).padStart(2, "0")}:00`;
+        tooltip.querySelector(".tooltip-hour").textContent = `${ist.month}/${ist.day} · ${hourText}`;
+        tooltip.querySelector(".tooltip-download").textContent = formatBytes(download);
+        tooltip.querySelector(".tooltip-upload").textContent = formatBytes(upload);
+        tooltip.querySelector(".tooltip-total-value").textContent = formatBytes(total);
+
+        if (guide) {
+            const x = xForHour(hour);
+            guide.setAttribute("x1", x);
+            guide.setAttribute("x2", x);
+            guide.classList.add("active");
         }
-      } else {
-        chartBox.innerHTML = `<p class="placeholder-text" style="color:var(--color-danger);">Failed to load device daily history.</p>`;
-      }
+
+        const boxRect = box.getBoundingClientRect();
+        const x = xForHour(hour);
+        const scaleX = boxRect.width / width;
+
+        let left = x * scaleX + 14;
+        let top = 22;
+        const tooltipWidth = tooltip.offsetWidth || 210;
+        const tooltipHeight = tooltip.offsetHeight || 120;
+
+        if (left + tooltipWidth > boxRect.width - 10) {
+            left = x * scaleX - tooltipWidth - 14;
+        }
+        if (left < 10) left = 10;
+        if (top + tooltipHeight > boxRect.height - 10) {
+            top = boxRect.height - tooltipHeight - 10;
+        }
+
+        tooltip.style.left = `${left}px`;
+        tooltip.style.top = `${top}px`;
+        tooltip.classList.add("visible");
     }
 
-    // 3. Device Network Counters
-    if (statsRes.status === "fulfilled" && statsRes.value) {
-      const stats = statsRes.value;
-      const devDl = document.getElementById("devStatDownload");
-      const devUl = document.getElementById("devStatUpload");
-      const rxB = document.getElementById("devStatRxBytes");
-      const txB = document.getElementById("devStatTxBytes");
-      const rxP = document.getElementById("devStatRxPkts");
-      const txP = document.getElementById("devStatTxPkts");
-      const rxE = document.getElementById("devStatRxErrors");
-      const txE = document.getElementById("devStatTxErrors");
-      const rxD = document.getElementById("devStatRxDropped");
-      const txD = document.getElementById("devStatTxDropped");
-
-      if (devDl) devDl.textContent = formatBytes(stats.download_bytes);
-      if (devUl) devUl.textContent = formatBytes(stats.upload_bytes);
-      if (rxB) rxB.textContent = formatBytes(stats.bytes_rx);
-      if (txB) txB.textContent = formatBytes(stats.bytes_tx);
-      if (rxP) rxP.textContent = formatNumber(stats.packets_rx);
-      if (txP) txP.textContent = formatNumber(stats.packets_tx);
-      if (rxE) rxE.textContent = formatNumber(stats.errors_rx);
-      if (txE) txE.textContent = formatNumber(stats.errors_tx);
-      if (rxD) rxD.textContent = formatNumber(stats.dropped_rx);
-      if (txD) txD.textContent = formatNumber(stats.dropped_tx);
+    function hideTooltip() {
+        if (tooltip) tooltip.classList.remove("visible");
+        if (guide) guide.classList.remove("active");
     }
-  } catch (err) {
-    console.error("Failed to load device details for", mac, err);
-  }
+
+    areas.forEach(area => {
+        area.addEventListener("mouseenter", () => showTooltip(area));
+        area.addEventListener("mousemove", () => showTooltip(area));
+        area.addEventListener("mouseleave", hideTooltip);
+    });
 }
 
-/**
- * Initialize Navigation & Event Handlers
- */
-function initTabs() {
-  const tabs = document.querySelectorAll(".nav-btn");
-  tabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-      const targetId = `pane-${tab.dataset.tab}`;
-      
-      document.querySelectorAll(".nav-btn").forEach(t => t.classList.remove("active"));
-      document.querySelectorAll(".tab-pane").forEach(p => p.classList.remove("active"));
+// ============================================================
+// Daily History & Overview Daily Chart (Last 7 Days)
+// ============================================================
 
-      tab.classList.add("active");
-      const targetPane = document.getElementById(targetId);
-      if (targetPane) targetPane.classList.add("active");
+function getLastSevenDates() {
+    const now = new Date();
+    const parts = new Intl.DateTimeFormat("en-CA", {
+        timeZone: IST_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
+    }).formatToParts(now);
 
-      // Load specific tab data when activated
-      if (tab.dataset.tab === "usage") {
-        loadUsageHistory();
-      } else if (tab.dataset.tab === "network") {
-        loadNetworkStats();
-      } else if (tab.dataset.tab === "devices") {
-        renderFullDevicesTable(allDevicesCache);
-      }
+    const values = {};
+    parts.forEach(p => {
+        if (p.type !== "literal") values[p.type] = Number(p.value);
     });
-  });
 
-  // Back button in Device Details
-  const backBtn = document.getElementById("btnBackToDevices");
-  if (backBtn) {
-    backBtn.addEventListener("click", () => {
-      const panel = document.getElementById("deviceDetails");
-      if (panel) panel.classList.add("hidden");
-      activeDeviceMac = null;
+    const base = new Date(Date.UTC(values.year, values.month - 1, values.day));
+    const formatter = new Intl.DateTimeFormat("en-CA", {
+        timeZone: IST_TIMEZONE,
+        year: "numeric",
+        month: "2-digit",
+        day: "2-digit"
     });
-  }
 
-  // Device Search Filter
-  const searchInput = document.getElementById("deviceSearchInput");
-  if (searchInput) {
-    searchInput.addEventListener("input", () => {
-      renderFullDevicesTable(allDevicesCache);
-    });
-  }
+    const result = [];
+    for (let i = 6; i >= 0; i--) {
+        const d = new Date(base);
+        d.setUTCDate(base.getUTCDate() - i);
+        result.push(formatter.format(d));
+    }
+    return result;
 }
 
-/**
- * Main App Refresh Cycle
- */
+async function loadDailyHistory() {
+    try {
+        const data = await getJSON("/usage/daily");
+        dailyHistory = data.days || data.history || [];
+        renderDailyChart();
+        renderDailyHistory();
+    } catch (err) {
+        console.error("Daily history error:", err);
+    }
+}
+
+function renderDailyChart() {
+    const panel = $("overviewDailyUsage");
+    if (!panel) return;
+
+    const historyMap = {};
+    (dailyHistory || []).forEach(item => {
+        const d = item.date || item.day;
+        if (d) {
+            const key = String(d).substring(0, 10);
+            historyMap[key] = {
+                download: Number(item.download_bytes || 0),
+                upload: Number(item.upload_bytes || 0),
+                total: Number(item.total_bytes || (Number(item.download_bytes || 0) + Number(item.upload_bytes || 0)))
+            };
+        }
+    });
+
+    const dates = getLastSevenDates();
+    const days = dates.map(date => {
+        const item = historyMap[date] || { download: 0, upload: 0, total: 0 };
+        return { date, download: item.download, upload: item.upload, total: item.total };
+    });
+
+    const maxTotal = Math.max(...days.map(d => d.total), 1);
+    const bars = days.map(item => {
+        const height = item.total > 0 ? Math.max(4, (item.total / maxTotal) * 140) : 4;
+        const dlHeight = item.total > 0 ? (item.download / item.total) * height : 0;
+        const ulHeight = item.total > 0 ? (item.upload / item.total) * height : 0;
+        const label = item.date.substring(8); // day of month
+
+        return `
+            <div class="daily-bar-group">
+                <div class="daily-bar" style="height:${height}px" title="${escapeHtml(item.date)} — ${escapeHtml(formatBytes(item.total))}">
+                    <div class="daily-download" style="height:${dlHeight}px"></div>
+                    <div class="daily-upload" style="height:${ulHeight}px"></div>
+                </div>
+                <span>${escapeHtml(label)}</span>
+            </div>
+        `;
+    }).join("");
+
+    const totalDownload = days.reduce((sum, d) => sum + d.download, 0);
+    const totalUpload = days.reduce((sum, d) => sum + d.upload, 0);
+
+    panel.innerHTML = `
+        <h3>
+            DAILY USAGE
+            <small>(LAST 7 DAYS)</small>
+        </h3>
+        <div class="daily-chart">
+            ${bars}
+        </div>
+        <div class="daily-summary">
+            <span>
+                <i class="orange-dot"></i>
+                DOWNLOAD
+                <strong>${formatBytes(totalDownload)}</strong>
+            </span>
+            <span>
+                <i class="teal-dot"></i>
+                UPLOAD
+                <strong>${formatBytes(totalUpload)}</strong>
+            </span>
+        </div>
+    `;
+}
+
+function renderDailyHistory() {
+    const container = $("historyList");
+    if (!container) return;
+
+    if (!dailyHistory.length) {
+        container.innerHTML = `<div class="pending">No daily history available.</div>`;
+        return;
+    }
+
+    const recent = [...dailyHistory].slice(-30).reverse();
+    container.innerHTML = recent.map(day => `
+        <div class="history-row">
+            <span><strong>${escapeHtml(day.date || day.day)}</strong></span>
+            <span class="orange">↓ ${escapeHtml(formatBytes(day.download_bytes || 0))}</span>
+            <span class="teal">↑ ${escapeHtml(formatBytes(day.upload_bytes || 0))}</span>
+            <strong>${escapeHtml(formatBytes(day.total_bytes || 0))}</strong>
+        </div>
+    `).join("");
+}
+
+// ============================================================
+// Network Statistics
+// ============================================================
+
+async function loadNetworkStats() {
+    try {
+        const data = await getJSON("/network/stats");
+        networkStats = data.stats || data || null;
+        renderNetworkStats();
+    } catch (err) {
+        console.error("Network stats error:", err);
+    }
+}
+
+function renderNetworkStats() {
+    const panel = $("overviewNetworkStats");
+    if (panel && networkStats) {
+        panel.innerHTML = `
+            <h3>NETWORK STATISTICS</h3>
+            <div class="stats-grid">
+                <div><span>PACKETS RECEIVED</span><strong>${formatNumber(networkStats.packets_rx)}</strong></div>
+                <div><span>PACKETS TRANSMITTED</span><strong>${formatNumber(networkStats.packets_tx)}</strong></div>
+                <div><span>RX DROPPED</span><strong>${formatNumber(networkStats.dropped_rx)}</strong></div>
+                <div><span>TX DROPPED</span><strong>${formatNumber(networkStats.dropped_tx)}</strong></div>
+                <div><span>RX ERRORS</span><strong>${formatNumber(networkStats.errors_rx)}</strong></div>
+                <div><span>TX ERRORS</span><strong>${formatNumber(networkStats.errors_tx)}</strong></div>
+                <div><span>RX BYTES</span><strong>${formatBytes(networkStats.bytes_rx)}</strong></div>
+                <div><span>TX BYTES</span><strong>${formatBytes(networkStats.bytes_tx)}</strong></div>
+            </div>
+        `;
+    }
+
+    const netGrid = $("networkTelemetryGrid");
+    if (netGrid && networkStats) {
+        netGrid.innerHTML = `
+            <div class="stats-grid">
+                <div><span>TOTAL DOWNLOAD</span><strong class="orange">${formatBytes(networkStats.download_bytes || 0)}</strong></div>
+                <div><span>TOTAL UPLOAD</span><strong class="teal">${formatBytes(networkStats.upload_bytes || 0)}</strong></div>
+                <div><span>PACKETS RECEIVED</span><strong>${formatNumber(networkStats.packets_rx)}</strong></div>
+                <div><span>PACKETS TRANSMITTED</span><strong>${formatNumber(networkStats.packets_tx)}</strong></div>
+                <div><span>RX DROPPED</span><strong>${formatNumber(networkStats.dropped_rx)}</strong></div>
+                <div><span>TX DROPPED</span><strong>${formatNumber(networkStats.dropped_tx)}</strong></div>
+                <div><span>RX ERRORS</span><strong>${formatNumber(networkStats.errors_rx)}</strong></div>
+                <div><span>TX ERRORS</span><strong>${formatNumber(networkStats.errors_tx)}</strong></div>
+                <div><span>RX BYTES</span><strong>${formatBytes(networkStats.bytes_rx)}</strong></div>
+                <div><span>TX BYTES</span><strong>${formatBytes(networkStats.bytes_tx)}</strong></div>
+            </div>
+        `;
+    }
+}
+
+// ============================================================
+// Device Details View
+// ============================================================
+
+async function openDevice(mac) {
+    if (!mac) return;
+    selectedDevice = mac;
+
+    switchView("device-details");
+
+    const fields = [
+        "deviceDetailTitle", "deviceDetailHostname", "deviceDetailIP", "deviceDetailMac",
+        "deviceTodayTotal", "deviceTodayDownload", "deviceTodayUpload",
+        "deviceYesterdayTotal", "deviceYesterdayDownload", "deviceYesterdayUpload",
+        "deviceSevenDayTotal", "deviceSevenDayDownload", "deviceSevenDayUpload",
+        "deviceMonthTotal", "deviceMonthDownload", "deviceMonthUpload",
+        "detailHostname", "detailIPv4", "detailIPv6", "detailMac", "detailRadio", "detailSSID", "detailAP",
+        "detailTimeConnected", "detailFirstSeen", "detailLastSeen",
+        "detailPacketsRx", "detailPacketsTx", "detailDroppedRx", "detailDroppedTx",
+        "detailErrorsRx", "detailErrorsTx", "detailBytesRx", "detailBytesTx"
+    ];
+    fields.forEach(id => setText(id, "--"));
+
+    if ($("deviceDailyChart")) {
+        $("deviceDailyChart").innerHTML = `<div class="pending">LOADING DEVICE DATA...</div>`;
+    }
+
+    try {
+        const encodedMac = encodeURIComponent(mac);
+        const [devRes, dailyRes, statsRes] = await Promise.all([
+            getJSON(`/devices/${encodedMac}`).catch(() => null),
+            getJSON(`/devices/${encodedMac}/daily`).catch(() => null),
+            getJSON(`/devices/${encodedMac}/stats`).catch(() => null)
+        ]);
+
+        const device = devRes?.device || devRes || {};
+        const usage = devRes?.usage || {};
+        const daily = dailyRes?.days || dailyRes?.history || [];
+        const stats = statsRes?.stats || statsRes || {};
+
+        const hostname = device.hostname || "Device Details";
+        setText("deviceDetailTitle", hostname);
+        setText("deviceDetailHostname", hostname);
+        setText("deviceDetailIP", device.ip_address || device.ipv4_address || "--");
+        setText("deviceDetailMac", device.mac_address || mac);
+
+        if ($("deviceDetailStatus")) {
+            $("deviceDetailStatus").className = `status-dot ${device.is_active ? '' : 'offline'}`;
+        }
+
+        // 4 Period Usage Cards
+        const t = usage.today || {};
+        const y = usage.yesterday || {};
+        const w = usage.last_7_days || {};
+        const m = usage.this_month || {};
+
+        setText("deviceTodayTotal", formatBytes(t.total_bytes || 0));
+        setText("deviceTodayDownload", formatBytes(t.download_bytes || 0));
+        setText("deviceTodayUpload", formatBytes(t.upload_bytes || 0));
+
+        setText("deviceYesterdayTotal", formatBytes(y.total_bytes || 0));
+        setText("deviceYesterdayDownload", formatBytes(y.download_bytes || 0));
+        setText("deviceYesterdayUpload", formatBytes(y.upload_bytes || 0));
+
+        setText("deviceSevenDayTotal", formatBytes(w.total_bytes || 0));
+        setText("deviceSevenDayDownload", formatBytes(w.download_bytes || 0));
+        setText("deviceSevenDayUpload", formatBytes(w.upload_bytes || 0));
+
+        setText("deviceMonthTotal", formatBytes(m.total_bytes || 0));
+        setText("deviceMonthDownload", formatBytes(m.download_bytes || 0));
+        setText("deviceMonthUpload", formatBytes(m.upload_bytes || 0));
+
+        // Device Information
+        setText("detailHostname", device.hostname || "--");
+        setText("detailIPv4", device.ip_address || device.ipv4_address || "--");
+        setText("detailIPv6", device.ipv6_address || "--");
+        setText("detailMac", device.mac_address || mac);
+        setText("detailRadio", device.radio || "--");
+        setText("detailSSID", device.ssid || "--");
+        setText("detailAP", device.ap || device.ap_name || "--");
+        setText("detailTimeConnected", device.time_connected || "--");
+        setText("detailFirstSeen", formatDateTime(device.first_seen));
+        setText("detailLastSeen", formatDateTime(device.last_seen));
+
+        // Device Statistics
+        setText("detailPacketsRx", formatNumber(stats.packets_rx));
+        setText("detailPacketsTx", formatNumber(stats.packets_tx));
+        setText("detailDroppedRx", formatNumber(stats.dropped_rx));
+        setText("detailDroppedTx", formatNumber(stats.dropped_tx));
+        setText("detailErrorsRx", formatNumber(stats.errors_rx));
+        setText("detailErrorsTx", formatNumber(stats.errors_tx));
+        setText("detailBytesRx", formatBytes(stats.bytes_rx));
+        setText("detailBytesTx", formatBytes(stats.bytes_tx));
+
+        // Device Daily Chart (Last 7 Days)
+        renderDeviceDailyChart(daily);
+
+    } catch (err) {
+        console.error("Open device error:", err);
+        if ($("deviceDailyChart")) {
+            $("deviceDailyChart").innerHTML = `<div class="pending">DEVICE DATA UNAVAILABLE</div>`;
+        }
+    }
+}
+
+function renderDeviceDailyChart(history) {
+    const container = $("deviceDailyChart");
+    if (!container) return;
+
+    const historyMap = {};
+    (history || []).forEach(item => {
+        const d = item.date || item.day;
+        if (d) {
+            const key = String(d).substring(0, 10);
+            historyMap[key] = {
+                download: Number(item.download_bytes || 0),
+                upload: Number(item.upload_bytes || 0),
+                total: Number(item.total_bytes || (Number(item.download_bytes || 0) + Number(item.upload_bytes || 0)))
+            };
+        }
+    });
+
+    const dates = getLastSevenDates();
+    const days = dates.map(date => {
+        const item = historyMap[date] || { download: 0, upload: 0, total: 0 };
+        return { date, download: item.download, upload: item.upload, total: item.total };
+    });
+
+    const maxTotal = Math.max(...days.map(d => d.total), 1);
+    const bars = days.map(item => {
+        const totalHeight = item.total > 0 ? Math.max(5, (item.total / maxTotal) * 190) : 4;
+        const dlHeight = item.total > 0 ? (item.download / item.total) * totalHeight : 0;
+        const ulHeight = item.total > 0 ? (item.upload / item.total) * totalHeight : 0;
+        const label = item.date.substring(5);
+
+        return `
+            <div class="device-day">
+                <span class="device-day-value">${escapeHtml(formatBytes(item.total))}</span>
+                <div class="device-day-bar" style="height:${totalHeight}px" title="${escapeHtml(item.date)} — ${escapeHtml(formatBytes(item.total))}">
+                    <div class="device-day-download" style="height:${dlHeight}px"></div>
+                    <div class="device-day-upload" style="height:${ulHeight}px"></div>
+                </div>
+                <span class="device-day-label">${escapeHtml(label)}</span>
+            </div>
+        `;
+    }).join("");
+
+    const downloadTotal = days.reduce((sum, d) => sum + d.download, 0);
+    const uploadTotal = days.reduce((sum, d) => sum + d.upload, 0);
+
+    container.innerHTML = `
+        <div class="device-chart-area">
+            <div class="device-chart-bars">
+                ${bars}
+            </div>
+            <div class="device-chart-summary">
+                <span>
+                    <i class="orange-dot"></i>
+                    DOWNLOAD
+                    <strong>${formatBytes(downloadTotal)}</strong>
+                </span>
+                <span>
+                    <i class="teal-dot"></i>
+                    UPLOAD
+                    <strong>${formatBytes(uploadTotal)}</strong>
+                </span>
+            </div>
+        </div>
+    `;
+}
+
+// ============================================================
+// Navigation
+// ============================================================
+
+function switchView(viewName) {
+    if (!viewName) return;
+    currentView = viewName;
+
+    document.querySelectorAll(".nav").forEach(btn => {
+        btn.classList.toggle("active", btn.dataset.view === viewName);
+    });
+
+    document.querySelectorAll(".view").forEach(sec => {
+        sec.classList.toggle("active", sec.id === viewName);
+    });
+
+    if (viewName === "history") loadDailyHistory();
+    if (viewName === "network") loadNetworkStats();
+    if (viewName === "devices") loadDevices();
+}
+
+function initNavigation() {
+    document.querySelectorAll(".nav").forEach(btn => {
+        btn.addEventListener("click", () => {
+            switchView(btn.dataset.view);
+        });
+    });
+
+    const refreshBtn = $("refresh");
+    if (refreshBtn) {
+        refreshBtn.addEventListener("click", async () => {
+            refreshBtn.classList.add("refreshing");
+            refreshBtn.disabled = true;
+            await refreshAll();
+            setTimeout(() => {
+                refreshBtn.classList.remove("refreshing");
+                refreshBtn.disabled = false;
+            }, 600);
+        });
+    }
+
+    const deviceBackBtn = $("deviceBack");
+    if (deviceBackBtn) {
+        deviceBackBtn.addEventListener("click", () => {
+            switchView("devices");
+            selectedDevice = null;
+        });
+    }
+
+    const viewAllBtn = document.querySelector(".panel.devices button[data-view='devices']");
+    if (viewAllBtn) {
+        viewAllBtn.addEventListener("click", () => {
+            switchView("devices");
+        });
+    }
+}
+
+// ============================================================
+// Main Refresh Cycle
+// ============================================================
+
 async function refreshAll() {
-  await Promise.allSettled([
-    loadStatus(),
-    loadTodayUsage(),
-    loadHourlyUsage(),
-    loadDevices(),
-    loadNetworkStats()
-  ]);
+    await Promise.allSettled([
+        loadStatus(),
+        loadTodayUsage(),
+        loadHourlyUsage(),
+        loadDevices(),
+        loadDailyHistory(),
+        loadNetworkStats()
+    ]);
 
-  // If a device details panel is currently open, refresh it as well
-  if (activeDeviceMac) {
-    openDevice(activeDeviceMac);
-  }
+    if (selectedDevice && currentView === "device-details") {
+        openDevice(selectedDevice);
+    }
 }
 
-/**
- * DOM Ready Bootstrap
- */
+// ============================================================
+// Bootstrap
+// ============================================================
+
 document.addEventListener("DOMContentLoaded", () => {
-  initTabs();
-  
-  // Start clock updater
-  updateISTClock();
-  setInterval(updateISTClock, 1000);
-
-  // Initial load
-  refreshAll();
-
-  // Periodic monitoring refresh cycle (15s)
-  setInterval(refreshAll, 15000);
+    initNavigation();
+    updateClock();
+    setInterval(updateClock, 1000);
+    refreshAll();
+    setInterval(refreshAll, 15000);
 });

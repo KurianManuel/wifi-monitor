@@ -1,460 +1,1555 @@
-<!DOCTYPE html>
+<!doctype html>
 <html lang="en">
+
 <head>
-  <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
-  <title>Jio WiFi Data Tracker | Network Monitor</title>
-  <meta name="description" content="Lightweight JioFiber & JioAirFiber Network and Traffic Monitoring Console for Raspberry Pi.">
-  <link rel="preconnect" href="https://fonts.googleapis.com">
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;700&display=swap" rel="stylesheet">
-  <link rel="stylesheet" href="dashboard.css">
+
+<meta charset="utf-8">
+
+<meta
+    name="viewport"
+    content="width=device-width,initial-scale=1"
+>
+
+<title>WiFi Monitor</title>
+
+
+<!-- ========================================================
+     Font
+     ======================================================== -->
+
+<link rel="preconnect" href="https://fonts.googleapis.com">
+
+<link
+    rel="preconnect"
+    href="https://fonts.gstatic.com"
+    crossorigin
+>
+
+<link
+    href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap"
+    rel="stylesheet"
+>
+
+
+<!-- ========================================================
+     Dashboard CSS
+     ======================================================== -->
+
+<link
+    rel="stylesheet"
+    href="dashboard.css"
+>
+
 </head>
-<body class="theme-terminal">
-  <div class="app-layout">
-    <!-- Top Navigation & Status Bar -->
-    <header class="app-header" role="banner">
-      <div class="header-brand">
-        <div class="brand-badge" id="brandBadge">JIO</div>
-        <div class="brand-title">
-          <h1>WIFI DATA TRACKER</h1>
-          <span class="router-model" id="routerIdentity">Jio Router</span>
-        </div>
-      </div>
-      
-      <div class="header-status">
-        <div class="status-indicator">
-          <span class="pulse-dot" id="statusDot"></span>
-          <span class="status-label" id="connectionStatus">CONNECTING</span>
-        </div>
-        <div class="header-metric">
-          <span class="metric-label">LAST UPDATED</span>
-          <span class="metric-val" id="lastUpdated">--:--:--</span>
-        </div>
-        <div class="header-metric highlight">
-          <span class="metric-label">CURRENT IST</span>
-          <span class="metric-val" id="currentClock">--:--:-- IST</span>
-        </div>
-      </div>
-    </header>
 
-    <!-- Navigation Tabs -->
-    <nav class="app-nav" role="navigation" aria-label="Main Navigation">
-      <ul class="nav-tabs">
-        <li><button class="nav-btn active" data-tab="overview" id="tab-overview">OVERVIEW</button></li>
-        <li><button class="nav-btn" data-tab="devices" id="tab-devices">DEVICES</button></li>
-        <li><button class="nav-btn" data-tab="usage" id="tab-usage">USAGE HISTORY</button></li>
-        <li><button class="nav-btn" data-tab="network" id="tab-network">NETWORK</button></li>
-        <li><button class="nav-btn" data-tab="settings" id="tab-settings">SETTINGS</button></li>
-        <li><button class="nav-btn" data-tab="about" id="tab-about">ABOUT</button></li>
-      </ul>
-    </nav>
 
-    <!-- Main Content Area -->
-    <main class="app-main" id="mainContent" role="main">
-      
-      <!-- ================= SECTION: OVERVIEW ================= -->
-      <section class="tab-pane active" id="pane-overview" aria-labelledby="tab-overview">
-        <!-- Overview Summary Cards (4 Primary Cards) -->
-        <div class="card-grid four-cards">
-          <div class="stat-card" id="cardTotalUsage">
-            <span class="card-title">TOTAL USAGE TODAY</span>
-            <div class="card-value" id="valTotalToday">0 B</div>
-            <div class="card-subtext">Cumulative traffic (IST)</div>
-          </div>
-          <div class="stat-card download-theme" id="cardDownload">
-            <span class="card-title">DOWNLOAD</span>
-            <div class="card-value" id="valDownloadToday">0 B</div>
-            <div class="card-subtext">Router TX Delta</div>
-          </div>
-          <div class="stat-card upload-theme" id="cardUpload">
-            <span class="card-title">UPLOAD</span>
-            <div class="card-value" id="valUploadToday">0 B</div>
-            <div class="card-subtext">Router RX Delta</div>
-          </div>
-          <div class="stat-card" id="cardDevices">
-            <span class="card-title">DEVICES</span>
-            <div class="card-value" id="valActiveDevices">0</div>
-            <div class="card-subtext" id="valDevicesSubtext">0 active / 0 registered</div>
-          </div>
+<body>
+
+
+<div class="app">
+
+
+<!-- ========================================================
+     Sidebar
+     ======================================================== -->
+
+<aside>
+
+    <div class="brand">
+
+        <div class="logo">
+            ⌁
         </div>
 
-        <!-- Charts Grid -->
-        <div class="dashboard-grid two-column">
-          <!-- 24-Hour Timeline Chart -->
-          <div class="panel-box">
-            <div class="panel-header">
-              <h2>NETWORK USAGE (TODAY)</h2>
-              <div class="chart-legend">
-                <span class="legend-chip download"><span class="chip-color"></span> Download</span>
-                <span class="legend-chip upload"><span class="chip-color"></span> Upload</span>
-              </div>
-            </div>
-            <div class="panel-body chart-container" id="hourlyChartContainer">
-              <div class="chart-canvas-wrapper" id="hourlyChart">
-                <p class="placeholder-text">Loading 24-hour timeline...</p>
-              </div>
-            </div>
-          </div>
+        <div>
 
-          <!-- Usage Distribution Chart -->
-          <div class="panel-box">
-            <div class="panel-header">
-              <h2>USAGE DISTRIBUTION (TODAY)</h2>
-            </div>
-            <div class="panel-body distribution-container" id="distribution">
-              <p class="placeholder-text">Loading device distribution...</p>
-            </div>
-          </div>
+            <b>WIFI MONITOR</b>
+
+            <small id="sidebarNetworkName">
+                ARACKAL NETWORK
+            </small>
+
         </div>
 
-        <!-- Network Quick Status & Network Stats Panels -->
-        <div class="dashboard-grid two-column">
-          <!-- Compact Network Status Card -->
-          <div class="panel-box" id="networkStatusCard">
-            <div class="panel-header">
-              <h2>NETWORK STATUS</h2>
-            </div>
-            <div class="panel-body" id="networkOverviewStatus">
-              <div class="info-list">
-                <div class="info-row">
-                  <span class="info-key">Router Status</span>
-                  <span class="info-val" id="netCardRouterStatus">Online</span>
+    </div>
+
+
+    <label>
+        MAIN
+    </label>
+
+
+    <button
+        class="nav active"
+        data-view="overview"
+    >
+        ⌂
+        <span>
+            OVERVIEW
+        </span>
+    </button>
+
+
+    <button
+        class="nav"
+        data-view="devices"
+    >
+        ▣
+        <span>
+            DEVICES
+        </span>
+    </button>
+
+
+    <button
+        class="nav"
+        data-view="history"
+    >
+        ▥
+        <span>
+            USAGE HISTORY
+        </span>
+    </button>
+
+
+    <button
+        class="nav"
+        data-view="network"
+    >
+        ◎
+        <span>
+            NETWORK
+        </span>
+    </button>
+
+
+    <hr>
+
+
+    <label>
+        SYSTEM
+    </label>
+
+
+    <button
+        class="nav"
+        data-view="settings"
+    >
+        ⚙
+        <span>
+            SETTINGS
+        </span>
+    </button>
+
+
+    <button
+        class="nav"
+        data-view="about"
+    >
+        ⓘ
+        <span>
+            ABOUT
+        </span>
+    </button>
+
+
+    <!-- ====================================================
+         System Status
+         ==================================================== -->
+
+    <div class="sys">
+
+        <label>
+            SYSTEM STATUS
+        </label>
+
+
+        <p>
+            ● Collector
+            <em id="collector">
+                CONNECTED
+            </em>
+        </p>
+
+
+        <p>
+            ● Database
+            <i id="database">
+                CONNECTED
+            </i>
+        </p>
+
+
+        <p class="sysline">
+            API
+            <strong id="api">
+                CONNECTED
+            </strong>
+        </p>
+
+    </div>
+
+</aside>
+
+
+<!-- ========================================================
+     Main
+     ======================================================== -->
+
+<main>
+
+
+<!-- ========================================================
+     Top Header
+     ======================================================== -->
+
+<header>
+
+    <span>
+
+        <b>
+            WIFI MONITOR
+        </b>
+
+        /
+        <span id="headerNetworkName">ARACKAL NETWORK</span>
+
+    </span>
+
+
+    <span>
+
+        ● ROUTER:
+        <b id="router">
+            ONLINE
+        </b>
+
+        &nbsp; | &nbsp;
+
+        LAST UPDATED:
+        <b id="updated">
+            JUST NOW
+        </b>
+
+        &nbsp; | &nbsp;
+
+        IST
+        <b id="clock">
+            --
+        </b>
+
+    </span>
+
+</header>
+
+
+<!-- ========================================================
+     OVERVIEW
+     ======================================================== -->
+
+<section
+    id="overview"
+    class="view active"
+>
+
+
+    <div class="heading">
+
+        <div>
+
+            <small>
+                NETWORK OVERVIEW
+            </small>
+
+            <h1>
+                Today
+            </h1>
+
+        </div>
+
+
+        <button id="refresh">
+            ↻ REFRESH
+        </button>
+
+    </div>
+
+
+    <!-- ====================================================
+         Summary Cards
+         ==================================================== -->
+
+    <div class="cards">
+
+
+        <article>
+
+            <label>
+                ▱　TOTAL USAGE (TODAY)
+            </label>
+
+            <strong id="total">
+                --
+            </strong>
+
+            <p>
+                ↓
+                <span id="td">
+                    --
+                </span>
+
+                &nbsp;
+
+                ↑
+                <span id="tu">
+                    --
+                </span>
+            </p>
+
+        </article>
+
+
+        <article>
+
+            <label>
+                ↓　DOWNLOAD
+            </label>
+
+            <strong
+                class="orange"
+                id="download"
+            >
+                --
+            </strong>
+
+            <p id="dp">
+                -- OF TOTAL
+            </p>
+
+        </article>
+
+
+        <article>
+
+            <label>
+                ↑　UPLOAD
+            </label>
+
+            <strong
+                class="teal"
+                id="upload"
+            >
+                --
+            </strong>
+
+            <p
+                class="teal"
+                id="up"
+            >
+                -- OF TOTAL
+            </p>
+
+        </article>
+
+
+        <article>
+
+            <label>
+                ▣　DEVICES
+            </label>
+
+            <strong id="count">
+                --
+            </strong>
+
+            <p id="split">
+                -- STORED DEVICES
+            </p>
+
+        </article>
+
+
+    </div>
+
+
+    <!-- ====================================================
+         Main Dashboard Grid
+         ==================================================== -->
+
+    <div class="grid">
+
+
+        <!-- ==================================================
+             Network Usage Chart
+             ================================================== -->
+
+        <article class="panel chart">
+
+            <h3>
+
+                NETWORK USAGE
+
+                <small>
+                    (TODAY)
+                </small>
+
+
+                <span>
+
+                    ● DOWNLOAD
+
+                    <span class="teal">
+                        ● UPLOAD
+                    </span>
+
+                </span>
+
+            </h3>
+
+
+            <div class="chartbox" id="hourlyChartContainer">
+
+                <div class="pending">
+                    Loading 24-hour timeline...
                 </div>
-                <div class="info-row">
-                  <span class="info-key">Connection Status</span>
-                  <span class="info-val" id="netCardConnStatus">Connected</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-key">Last Updated</span>
-                  <span class="info-val" id="netCardLastUpdated">--:--:--</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-key">Today Download</span>
-                  <span class="info-val highlight-orange" id="netCardDownload">0 B</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-key">Today Upload</span>
-                  <span class="info-val highlight-teal" id="netCardUpload">0 B</span>
-                </div>
-                <div class="info-row">
-                  <span class="info-key">Today Total</span>
-                  <span class="info-val" id="netCardTotal">0 B</span>
-                </div>
-              </div>
-            </div>
-          </div>
 
-          <!-- Network Statistics Mini Panel -->
-          <div class="panel-box">
-            <div class="panel-header">
-              <h2>NETWORK STATISTICS</h2>
             </div>
-            <div class="panel-body" id="networkStats">
-              <div class="stats-mini-grid">
-                <div class="mini-stat"><span class="lbl">Download:</span><span class="val highlight-orange" id="netStatDownload">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Upload:</span><span class="val highlight-teal" id="netStatUpload">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Bytes RX:</span><span class="val" id="netRxBytes">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Bytes TX:</span><span class="val" id="netTxBytes">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Packets RX:</span><span class="val" id="netRxPkts">0</span></div>
-                <div class="mini-stat"><span class="lbl">Packets TX:</span><span class="val" id="netTxPkts">0</span></div>
-                <div class="mini-stat"><span class="lbl">Errors RX:</span><span class="val" id="netRxErrors">0</span></div>
-                <div class="mini-stat"><span class="lbl">Errors TX:</span><span class="val" id="netTxErrors">0</span></div>
-                <div class="mini-stat"><span class="lbl">Dropped RX:</span><span class="val" id="netRxDropped">0</span></div>
-                <div class="mini-stat"><span class="lbl">Dropped TX:</span><span class="val" id="netTxDropped">0</span></div>
-              </div>
+
+        </article>
+
+
+        <!-- ==================================================
+             Usage Distribution
+             ================================================== -->
+
+        <article class="panel">
+
+            <h3>
+
+                USAGE DISTRIBUTION
+
+                <small>
+                    (TODAY)
+                </small>
+
+            </h3>
+
+
+            <div class="dist">
+
+
+                <div
+                    class="donut"
+                    id="donut"
+                >
+
+                    <b id="donutText">
+                        --
+                    </b>
+
+                    <small>
+                        TOTAL
+                    </small>
+
+                </div>
+
+
+                <div id="distribution"></div>
+
+
             </div>
-          </div>
+
+        </article>
+
+
+        <!-- ==================================================
+             Network Status
+             ================================================== -->
+
+        <article class="panel network">
+
+            <h3>
+                NETWORK STATUS
+            </h3>
+
+
+            <label>
+                CONNECTION
+            </label>
+
+
+            <dl>
+
+                <dt>
+                    Router API
+                </dt>
+
+                <dd id="netRouterApi">
+                    ONLINE
+                </dd>
+
+
+                <dt>
+                    Timezone
+                </dt>
+
+                <dd>
+                    Asia/Kolkata
+                </dd>
+
+
+                <dt>
+                    Devices
+                </dt>
+
+                <dd id="ndev">
+                    --
+                </dd>
+
+            </dl>
+
+
+            <label>
+                TRAFFIC (TODAY)
+            </label>
+
+
+            <dl>
+
+                <dt>
+                    Download
+                </dt>
+
+                <dd
+                    class="orange"
+                    id="nd"
+                >
+                    --
+                </dd>
+
+
+                <dt>
+                    Upload
+                </dt>
+
+                <dd
+                    class="teal"
+                    id="nu"
+                >
+                    --
+                </dd>
+
+
+                <dt>
+                    Total
+                </dt>
+
+                <dd id="nt">
+                    --
+                </dd>
+
+            </dl>
+
+        </article>
+
+
+    </div>
+
+
+    <!-- ====================================================
+         Lower Dashboard
+         ==================================================== -->
+
+    <div class="lower">
+
+
+        <!-- ==================================================
+             Devices
+             ================================================== -->
+
+        <article class="panel devices">
+
+
+            <h3>
+
+                DEVICES
+
+                <small id="dc">
+                    (0)
+                </small>
+
+
+                <button
+                    data-view="devices"
+                >
+                    [ VIEW ALL DEVICES ]
+                </button>
+
+            </h3>
+
+
+            <div class="scroll">
+
+
+                <table>
+
+                    <thead>
+
+                        <tr>
+
+                            <th>
+                                DEVICE
+                            </th>
+
+                            <th>
+                                IP ADDRESS
+                            </th>
+
+                            <th>
+                                DOWNLOAD ↓
+                            </th>
+
+                            <th>
+                                UPLOAD ↑
+                            </th>
+
+                            <th>
+                                TOTAL
+                            </th>
+
+                            <th>
+                                LAST SEEN
+                            </th>
+
+                        </tr>
+
+                    </thead>
+
+
+                    <tbody id="deviceRows"></tbody>
+
+
+                </table>
+
+
+            </div>
+
+
+        </article>
+
+
+        <!-- ==================================================
+             Lower Right Stack
+             ================================================== -->
+
+        <div class="stack">
+
+
+            <article class="panel mini" id="overviewDailyUsage">
+
+                <h3>
+
+                    DAILY USAGE
+
+                    <small>
+                        (LAST 7 DAYS)
+                    </small>
+
+                </h3>
+
+
+                <div class="pending">
+                    Loading daily usage...
+                </div>
+
+            </article>
+
+
+            <article class="panel mini" id="overviewNetworkStats">
+
+                <h3>
+                    NETWORK STATISTICS
+                </h3>
+
+
+                <div class="pending">
+                    Loading network statistics...
+                </div>
+
+            </article>
+
+
         </div>
 
-        <!-- Devices Summary Table -->
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2>CONNECTED DEVICES</h2>
-            <span class="sub-badge">Click row for full device details</span>
-          </div>
-          <div class="panel-body table-responsive">
-            <table class="tech-table" id="overviewDevicesTable">
-              <thead>
-                <tr>
-                  <th>DEVICE</th>
-                  <th>IP ADDRESS</th>
-                  <th>DOWNLOAD</th>
-                  <th>UPLOAD</th>
-                  <th>TOTAL</th>
-                  <th>LAST SEEN</th>
-                  <th>STATUS</th>
-                </tr>
-              </thead>
-              <tbody id="overviewDevicesBody">
-                <tr><td colspan="7" class="table-empty">Loading devices...</td></tr>
-              </tbody>
+
+    </div>
+
+
+</section>
+
+
+<!-- ========================================================
+     DEVICES
+     ======================================================== -->
+
+<section
+    id="devices"
+    class="view"
+>
+
+
+    <div class="heading">
+
+        <div>
+
+            <small>
+                NETWORK
+            </small>
+
+            <h1>
+                Devices
+            </h1>
+
+        </div>
+
+    </div>
+
+
+    <article class="panel devices">
+
+
+        <div class="scroll">
+
+
+            <table>
+
+                <thead>
+
+                    <tr>
+
+                        <th>
+                            DEVICE
+                        </th>
+
+                        <th>
+                            MAC
+                        </th>
+
+                        <th>
+                            IP ADDRESS
+                        </th>
+
+                        <th>
+                            RADIO
+                        </th>
+
+                        <th>
+                            SSID
+                        </th>
+
+                        <th>
+                            AP
+                        </th>
+
+                        <th>
+                            LAST SEEN
+                        </th>
+
+                    </tr>
+
+                </thead>
+
+
+                <tbody id="allRows"></tbody>
+
+
             </table>
-          </div>
-        </div>
-      </section>
 
-      <!-- ================= SECTION: DEVICES ================= -->
-      <section class="tab-pane" id="pane-devices" aria-labelledby="tab-devices">
-        <div class="panel-box" id="allDevicesPanel">
-          <div class="panel-header">
-            <h2>ALL DISCOVERED DEVICES</h2>
-            <div class="header-actions">
-              <input type="text" id="deviceSearchInput" class="tech-input" placeholder="Filter by name, MAC, or IP...">
-            </div>
-          </div>
-          <div class="panel-body table-responsive">
-            <table class="tech-table" id="fullDevicesTable">
-              <thead>
-                <tr>
-                  <th>DEVICE</th>
-                  <th>MAC ADDRESS</th>
-                  <th>IP ADDRESS</th>
-                  <th>RADIO</th>
-                  <th>SSID</th>
-                  <th>AP</th>
-                  <th>LAST SEEN</th>
-                  <th>STATUS</th>
-                </tr>
-              </thead>
-              <tbody id="fullDevicesBody">
-                <tr><td colspan="8" class="table-empty">Loading all devices...</td></tr>
-              </tbody>
-            </table>
-          </div>
+
         </div>
 
-        <!-- Device Details Modal/Drawer Container -->
-        <div class="device-details-panel hidden" id="deviceDetails">
-          <div class="panel-box">
-            <div class="panel-header detail-header">
-              <div class="detail-header-left">
-                <button class="tech-btn secondary" id="btnBackToDevices">&larr; BACK TO DEVICES</button>
-                <h2 id="detailDeviceName" class="detail-title">Device Details</h2>
-                <div class="detail-meta">
-                  <span class="detail-subtitle" id="detailDeviceMac">--:--:--:--:--:--</span>
-                  <span class="detail-badge" id="detailDeviceIp">IP: --</span>
-                  <span class="detail-badge" id="detailDeviceRadio">Radio: --</span>
-                  <span class="detail-badge" id="detailDeviceSsid">SSID: --</span>
-                  <span class="detail-badge" id="detailDeviceAp">AP: --</span>
-                  <span class="detail-badge" id="detailDeviceLastSeen">Last Seen: --</span>
-                  <span class="badge-pill active" id="detailDeviceStatus">ONLINE</span>
+
+    </article>
+
+
+</section>
+
+
+<!-- ========================================================
+     DEVICE DETAILS
+     ======================================================== -->
+
+<section
+    id="device-details"
+    class="view"
+>
+
+
+    <div class="heading">
+
+
+        <div>
+
+            <small>
+                DEVICE
+            </small>
+
+            <h1 id="deviceDetailTitle">
+                Device Details
+            </h1>
+
+        </div>
+
+
+        <button
+            id="deviceBack"
+            type="button"
+        >
+            ← BACK TO DEVICES
+        </button>
+
+
+    </div>
+
+
+    <!-- ====================================================
+         Device Header
+         ==================================================== -->
+
+    <article class="panel device-profile">
+
+
+        <div class="device-profile-header">
+
+
+            <div class="device-profile-name">
+
+
+                <span
+                    class="status-dot"
+                    id="deviceDetailStatus"
+                ></span>
+
+
+                <div>
+
+                    <h2 id="deviceDetailHostname">
+                        --
+                    </h2>
+
+                    <p id="deviceDetailIP">
+                        --
+                    </p>
+
                 </div>
-              </div>
-            </div>
-            
-            <div class="panel-body">
-              <!-- Device Usage Cards (4 Horizontal Grid: Today, Yesterday, Last 7 Days, This Month) -->
-              <div class="card-grid four-cards" id="deviceUsageCards">
-                <div class="stat-card">
-                  <span class="card-title">TODAY</span>
-                  <div class="card-value" id="devUsageToday">0 B</div>
-                  <div class="card-subtext" id="devUsageTodayBreakdown">↓ 0 B  ↑ 0 B</div>
-                </div>
-                <div class="stat-card">
-                  <span class="card-title">YESTERDAY</span>
-                  <div class="card-value" id="devUsageYesterday">0 B</div>
-                  <div class="card-subtext" id="devUsageYesterdayBreakdown">↓ 0 B  ↑ 0 B</div>
-                </div>
-                <div class="stat-card">
-                  <span class="card-title">LAST 7 DAYS</span>
-                  <div class="card-value" id="devUsage7Days">0 B</div>
-                  <div class="card-subtext" id="devUsage7DaysBreakdown">↓ 0 B  ↑ 0 B</div>
-                </div>
-                <div class="stat-card">
-                  <span class="card-title">THIS MONTH</span>
-                  <div class="card-value" id="devUsageMonth">0 B</div>
-                  <div class="card-subtext" id="devUsageMonthBreakdown">↓ 0 B  ↑ 0 B</div>
-                </div>
-              </div>
 
-              <!-- Device Daily History Chart & Stats -->
-              <div class="dashboard-grid two-column" style="margin-top: 1.5rem;">
-                <div class="panel-box">
-                  <div class="panel-header">
-                    <h3>LAST 7 DAYS USAGE</h3>
-                  </div>
-                  <div class="panel-body" id="deviceDailyChart">
-                    <p class="placeholder-text">Loading device daily history...</p>
-                  </div>
-                </div>
-                
-                <div class="panel-box">
-                  <div class="panel-header">
-                    <h3>DEVICE NETWORK STATS</h3>
-                  </div>
-                  <div class="panel-body" id="deviceNetworkStats">
-                    <div class="stats-mini-grid">
-                      <div class="mini-stat"><span class="lbl">Download:</span><span class="val highlight-orange" id="devStatDownload">0 B</span></div>
-                      <div class="mini-stat"><span class="lbl">Upload:</span><span class="val highlight-teal" id="devStatUpload">0 B</span></div>
-                      <div class="mini-stat"><span class="lbl">Bytes RX:</span><span class="val" id="devStatRxBytes">0 B</span></div>
-                      <div class="mini-stat"><span class="lbl">Bytes TX:</span><span class="val" id="devStatTxBytes">0 B</span></div>
-                      <div class="mini-stat"><span class="lbl">Packets RX:</span><span class="val" id="devStatRxPkts">0</span></div>
-                      <div class="mini-stat"><span class="lbl">Packets TX:</span><span class="val" id="devStatTxPkts">0</span></div>
-                      <div class="mini-stat"><span class="lbl">Errors RX:</span><span class="val" id="devStatRxErrors">0</span></div>
-                      <div class="mini-stat"><span class="lbl">Errors TX:</span><span class="val" id="devStatTxErrors">0</span></div>
-                      <div class="mini-stat"><span class="lbl">Dropped RX:</span><span class="val" id="devStatRxDropped">0</span></div>
-                      <div class="mini-stat"><span class="lbl">Dropped TX:</span><span class="val" id="devStatTxDropped">0</span></div>
-                    </div>
-                  </div>
-                </div>
-              </div>
 
             </div>
-          </div>
-        </div>
-      </section>
 
-      <!-- ================= SECTION: USAGE HISTORY ================= -->
-      <section class="tab-pane" id="pane-usage" aria-labelledby="tab-usage">
-        <div class="card-grid four-cards">
-          <div class="stat-card">
-            <span class="card-title">TODAY</span>
-            <div class="card-value" id="histTodayTotal">0 B</div>
-            <div class="card-subtext" id="histTodaySub">↓ 0 B  ↑ 0 B</div>
-          </div>
-          <div class="stat-card">
-            <span class="card-title">YESTERDAY</span>
-            <div class="card-value" id="histYesterdayTotal">0 B</div>
-            <div class="card-subtext" id="histYesterdaySub">↓ 0 B  ↑ 0 B</div>
-          </div>
-          <div class="stat-card">
-            <span class="card-title">LAST 7 DAYS</span>
-            <div class="card-value" id="hist7DaysTotal">0 B</div>
-            <div class="card-subtext" id="hist7DaysSub">↓ 0 B  ↑ 0 B</div>
-          </div>
-          <div class="stat-card">
-            <span class="card-title">THIS MONTH</span>
-            <div class="card-value" id="histMonthTotal">0 B</div>
-            <div class="card-subtext" id="histMonthSub">↓ 0 B  ↑ 0 B</div>
-          </div>
+
+            <div class="device-profile-mac">
+
+                <small>
+                    MAC ADDRESS
+                </small>
+
+                <strong id="deviceDetailMac">
+                    --
+                </strong>
+
+            </div>
+
+
         </div>
 
-        <div class="panel-box" style="margin-top: 1.5rem;">
-          <div class="panel-header">
-            <h2>DAILY USAGE HISTORY</h2>
-            <span class="sub-badge">Aggregated IST daily traffic</span>
-          </div>
-          <div class="panel-body table-responsive">
-            <table class="tech-table" id="dailyUsageTable">
-              <thead>
-                <tr>
-                  <th>DATE (IST)</th>
-                  <th>DOWNLOAD</th>
-                  <th>UPLOAD</th>
-                  <th>TOTAL</th>
-                </tr>
-              </thead>
-              <tbody id="dailyUsageBody">
-                <tr><td colspan="4" class="table-empty">Loading historical daily records...</td></tr>
-              </tbody>
-            </table>
-          </div>
+
+    </article>
+
+
+    <!-- ====================================================
+         Device Usage Cards
+         ==================================================== -->
+
+    <div class="device-usage">
+
+
+        <article class="panel">
+
+            <label>
+                TODAY
+            </label>
+
+            <strong
+                id="deviceTodayTotal"
+            >
+                --
+            </strong>
+
+            <p>
+
+                ↓
+                <span
+                    class="orange"
+                    id="deviceTodayDownload"
+                >
+                    --
+                </span>
+
+                &nbsp;
+
+                ↑
+                <span
+                    class="teal"
+                    id="deviceTodayUpload"
+                >
+                    --
+                </span>
+
+            </p>
+
+        </article>
+
+
+        <article class="panel">
+
+            <label>
+                YESTERDAY
+            </label>
+
+            <strong
+                id="deviceYesterdayTotal"
+            >
+                --
+            </strong>
+
+            <p>
+
+                ↓
+                <span
+                    class="orange"
+                    id="deviceYesterdayDownload"
+                >
+                    --
+                </span>
+
+                &nbsp;
+
+                ↑
+                <span
+                    class="teal"
+                    id="deviceYesterdayUpload"
+                >
+                    --
+                </span>
+
+            </p>
+
+        </article>
+
+
+        <article class="panel">
+
+            <label>
+                LAST 7 DAYS
+            </label>
+
+            <strong
+                id="deviceSevenDayTotal"
+            >
+                --
+            </strong>
+
+            <p>
+
+                ↓
+                <span
+                    class="orange"
+                    id="deviceSevenDayDownload"
+                >
+                    --
+                </span>
+
+                &nbsp;
+
+                ↑
+                <span
+                    class="teal"
+                    id="deviceSevenDayUpload"
+                >
+                    --
+                </span>
+
+            </p>
+
+        </article>
+
+
+        <article class="panel">
+
+            <label>
+                THIS MONTH
+            </label>
+
+            <strong
+                id="deviceMonthTotal"
+            >
+                --
+            </strong>
+
+            <p>
+
+                ↓
+                <span
+                    class="orange"
+                    id="deviceMonthDownload"
+                >
+                    --
+                </span>
+
+                &nbsp;
+
+                ↑
+                <span
+                    class="teal"
+                    id="deviceMonthUpload"
+                >
+                    --
+                </span>
+
+            </p>
+
+        </article>
+
+
+    </div>
+
+
+    <!-- ====================================================
+         Device Information + Network Statistics
+         ==================================================== -->
+
+    <div class="device-details-grid">
+
+
+        <!-- ==================================================
+             Device Information
+             ================================================== -->
+
+        <article class="panel device-info">
+
+
+            <h3>
+                DEVICE INFORMATION
+            </h3>
+
+
+            <dl>
+
+                <dt>
+                    HOSTNAME
+                </dt>
+
+                <dd id="detailHostname">
+                    --
+                </dd>
+
+
+                <dt>
+                    IPv4 ADDRESS
+                </dt>
+
+                <dd id="detailIPv4">
+                    --
+                </dd>
+
+
+                <dt>
+                    IPv6 ADDRESS
+                </dt>
+
+                <dd id="detailIPv6">
+                    --
+                </dd>
+
+
+                <dt>
+                    MAC ADDRESS
+                </dt>
+
+                <dd id="detailMac">
+                    --
+                </dd>
+
+
+                <dt>
+                    RADIO
+                </dt>
+
+                <dd id="detailRadio">
+                    --
+                </dd>
+
+
+                <dt>
+                    SSID
+                </dt>
+
+                <dd id="detailSSID">
+                    --
+                </dd>
+
+
+                <dt>
+                    ACCESS POINT
+                </dt>
+
+                <dd id="detailAP">
+                    --
+                </dd>
+
+
+                <dt>
+                    TIME CONNECTED
+                </dt>
+
+                <dd id="detailTimeConnected">
+                    --
+                </dd>
+
+
+                <dt>
+                    FIRST SEEN
+                </dt>
+
+                <dd id="detailFirstSeen">
+                    --
+                </dd>
+
+
+                <dt>
+                    LAST SEEN
+                </dt>
+
+                <dd id="detailLastSeen">
+                    --
+                </dd>
+
+
+            </dl>
+
+
+        </article>
+
+
+        <!-- ==================================================
+             Device Network Statistics
+             ================================================== -->
+
+        <article class="panel device-stats">
+
+
+            <h3>
+                NETWORK STATISTICS
+                <small>
+                    (CURRENT)
+                </small>
+            </h3>
+
+
+            <div class="stats-grid" id="deviceStatsGrid">
+
+
+                <div>
+
+                    <span>
+                        PACKETS RECEIVED
+                    </span>
+
+                    <strong
+                        id="detailPacketsRx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        PACKETS TRANSMITTED
+                    </span>
+
+                    <strong
+                        id="detailPacketsTx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        RX DROPPED
+                    </span>
+
+                    <strong
+                        id="detailDroppedRx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        TX DROPPED
+                    </span>
+
+                    <strong
+                        id="detailDroppedTx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        RX ERRORS
+                    </span>
+
+                    <strong
+                        id="detailErrorsRx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        TX ERRORS
+                    </span>
+
+                    <strong
+                        id="detailErrorsTx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        RX BYTES
+                    </span>
+
+                    <strong
+                        id="detailBytesRx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+                <div>
+
+                    <span>
+                        TX BYTES
+                    </span>
+
+                    <strong
+                        id="detailBytesTx"
+                    >
+                        --
+                    </strong>
+
+                </div>
+
+
+            </div>
+
+
+        </article>
+
+
+    </div>
+
+
+    <!-- ====================================================
+         Device Daily History
+         ==================================================== -->
+
+    <article class="panel device-history">
+
+
+        <h3>
+
+            DAILY USAGE
+
+            <small>
+                (DEVICE HISTORY)
+            </small>
+
+        </h3>
+
+
+        <div
+            id="deviceDailyChart"
+            class="device-daily-chart"
+        >
+
+            <div class="pending">
+                Select a device to view history.
+            </div>
+
         </div>
-      </section>
 
-      <!-- ================= SECTION: NETWORK ================= -->
-      <section class="tab-pane" id="pane-network" aria-labelledby="tab-network">
-        <div class="dashboard-grid two-column">
-          <div class="panel-box">
-            <div class="panel-header">
-              <h2>ROUTER & LINK STATUS</h2>
-            </div>
-            <div class="panel-body">
-              <div class="info-list">
-                <div class="info-row"><span class="info-key">Platform Target:</span><span class="info-val">Raspberry Pi Zero 2 W</span></div>
-                <div class="info-row"><span class="info-key">Target Router:</span><span class="info-val" id="netTabRouterIdentity">JioFiber / JioAirFiber</span></div>
-                <div class="info-row"><span class="info-key">Router Gateway:</span><span class="info-val" id="netTabRouterHost">192.168.29.1</span></div>
-                <div class="info-row"><span class="info-key">Router Status:</span><span class="info-val" id="netTabRouterStatus">Online</span></div>
-                <div class="info-row"><span class="info-key">Operating Mode:</span><span class="info-val" id="netTabOperatingMode">MOCK / ACTIVE</span></div>
-                <div class="info-row"><span class="info-key">Total Known Devices:</span><span class="info-val" id="netTabKnownDevices">0</span></div>
-                <div class="info-row"><span class="info-key">Auth Mechanism:</span><span class="info-val">Jio Proprietary Session Handshake</span></div>
-                <div class="info-row"><span class="info-key">Traffic Interpretation:</span><span class="info-val">TX = Download, RX = Upload</span></div>
-                <div class="info-row"><span class="info-key">Database Mode:</span><span class="info-val">SQLite 3 (WAL mode)</span></div>
-              </div>
-            </div>
-          </div>
 
-          <div class="panel-box">
-            <div class="panel-header">
-              <h2>NETWORK TELEMETRY TOTALS</h2>
-            </div>
-            <div class="panel-body" id="networkTelemetryStats">
-              <div class="stats-mini-grid">
-                <div class="mini-stat"><span class="lbl">Total Download:</span><span class="val highlight-orange" id="netFullDownload">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Total Upload:</span><span class="val highlight-teal" id="netFullUpload">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Bytes RX:</span><span class="val" id="netFullRxBytes">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Bytes TX:</span><span class="val" id="netFullTxBytes">0 B</span></div>
-                <div class="mini-stat"><span class="lbl">Packets RX:</span><span class="val" id="netFullRxPkts">0</span></div>
-                <div class="mini-stat"><span class="lbl">Packets TX:</span><span class="val" id="netFullTxPkts">0</span></div>
-                <div class="mini-stat"><span class="lbl">Errors RX:</span><span class="val" id="netFullRxErrors">0</span></div>
-                <div class="mini-stat"><span class="lbl">Errors TX:</span><span class="val" id="netFullTxErrors">0</span></div>
-                <div class="mini-stat"><span class="lbl">Dropped RX:</span><span class="val" id="netFullRxDropped">0</span></div>
-                <div class="mini-stat"><span class="lbl">Dropped TX:</span><span class="val" id="netFullTxDropped">0</span></div>
-              </div>
-            </div>
-          </div>
+    </article>
+
+
+</section>
+
+
+<!-- ========================================================
+     USAGE HISTORY
+     ======================================================== -->
+
+<section
+    id="history"
+    class="view"
+>
+
+
+    <div class="heading">
+
+        <div>
+
+            <small>
+                USAGE
+            </small>
+
+            <h1>
+                Usage History
+            </h1>
+
         </div>
-      </section>
 
-      <!-- ================= SECTION: SETTINGS ================= -->
-      <section class="tab-pane" id="pane-settings" aria-labelledby="tab-settings">
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2>MONITORING CONFIGURATION</h2>
-            <span class="sub-badge">Read-Only Safe View</span>
-          </div>
-          <div class="panel-body">
-            <div class="info-list">
-              <div class="info-row"><span class="info-key">Router Host:</span><span class="info-val" id="cfgRouterHost">192.168.29.1</span></div>
-              <div class="info-row"><span class="info-key">Router Identity:</span><span class="info-val" id="cfgRouterIdentity">Jio Router</span></div>
-              <div class="info-row"><span class="info-key">Router Mode:</span><span class="info-val" id="cfgRouterMode">mock</span></div>
-              <div class="info-row"><span class="info-key">Credentials & Tokens:</span><span class="info-val status-secure">[PROTECTED - NEVER DISPLAYED]</span></div>
-              <div class="info-row"><span class="info-key">Collection Interval:</span><span class="info-val" id="cfgCollectionInterval">60 seconds</span></div>
-              <div class="info-row"><span class="info-key">Dashboard Refresh:</span><span class="info-val" id="cfgRefreshInterval">15 seconds</span></div>
-              <div class="info-row"><span class="info-key">Timezone Standard:</span><span class="info-val">Asia/Kolkata (IST)</span></div>
-              <div class="info-row"><span class="info-key">Database Path:</span><span class="info-val" id="cfgDbPath">data/traffic.db (SQLite WAL)</span></div>
-            </div>
-          </div>
+    </div>
+
+
+    <article class="panel empty" id="historyContent">
+
+
+        <b>
+            [ DAILY HISTORY ]
+        </b>
+
+
+        <h2>
+            Network usage history
+        </h2>
+
+
+        <div id="historyList" class="history-list"></div>
+
+
+    </article>
+
+
+</section>
+
+
+<!-- ========================================================
+     NETWORK
+     ======================================================== -->
+
+<section
+    id="network"
+    class="view"
+>
+
+
+    <div class="heading">
+
+        <div>
+
+            <small>
+                NETWORK
+            </small>
+
+            <h1>
+                Network
+            </h1>
+
         </div>
-      </section>
 
-      <!-- ================= SECTION: ABOUT ================= -->
-      <section class="tab-pane" id="pane-about" aria-labelledby="tab-about">
-        <div class="panel-box">
-          <div class="panel-header">
-            <h2>ABOUT JIO WIFI DATA TRACKER</h2>
-          </div>
-          <div class="panel-body text-content">
-            <p><strong>JIO WIFI DATA TRACKER</strong> is a dedicated telemetry and bandwidth monitoring console engineered specifically for <strong>JioFiber</strong> and <strong>JioAirFiber</strong> home gateway routers.</p>
-            
-            <h3>Key Architecture Highlights:</h3>
-            <ul>
-              <li><strong>Zero-Overhead Target:</strong> Purpose-built for the Raspberry Pi Zero 2 W with minimal CPU and memory footprint.</li>
-              <li><strong>Preserved Direction Semantics:</strong> Correctly maps router counter statistics (<code>current_tx delta = download_bytes</code>, <code>current_rx delta = upload_bytes</code>).</li>
-              <li><strong>Local Storage:</strong> SQLite with Write-Ahead Logging (WAL) for safe, concurrent, long-running retention without database corruption.</li>
-              <li><strong>Strict Isolation:</strong> The web dashboard communicates exclusively through a read-only Flask API. Credentials and router sessions are never exposed to the client.</li>
-              <li><strong>Timezone Standard:</strong> All date and time representations are locked to Indian Standard Time (IST, <code>Asia/Kolkata</code>) with full 24-hour retention across midnight transitions.</li>
-              <li><strong>Technology Stack:</strong> Python 3, Flask, SQLite3, Vanilla HTML5 / CSS3 / ES6 JavaScript.</li>
-            </ul>
-          </div>
+    </div>
+
+
+    <article class="panel empty" id="networkContent">
+
+
+        <b>
+            [ NETWORK TELEMETRY ]
+        </b>
+
+
+        <h2>
+            Router and network statistics
+        </h2>
+
+
+        <div id="networkTelemetryGrid" style="width:100%; max-width:700px; margin-top:20px;"></div>
+
+
+    </article>
+
+
+</section>
+
+
+<!-- ========================================================
+     SETTINGS
+     ======================================================== -->
+
+<section
+    id="settings"
+    class="view"
+>
+
+
+    <div class="heading">
+
+        <div>
+
+            <small>
+                SYSTEM
+            </small>
+
+            <h1>
+                Settings
+            </h1>
+
         </div>
-      </section>
 
-    </main>
+    </div>
 
-    <!-- Global Floating Tooltip for Charts -->
-    <div id="chartTooltip" class="chart-tooltip hidden"></div>
 
-    <!-- App Footer -->
-    <footer class="app-footer">
-      <div class="footer-inner">
-        <span>Jio WiFi Data Tracker &bull; Rebuilt Clean</span>
-        <span id="footerModeStatus">Mode: Mock / Initializing</span>
-      </div>
-    </footer>
-  </div>
+    <article class="panel empty">
 
-  <script src="dashboard.js"></script>
+
+        <b>
+            [ SETTINGS ]
+        </b>
+
+
+        <h2>
+            Monitoring Configuration
+        </h2>
+
+
+        <div style="width:100%; max-width:600px; margin-top:20px; text-align:left;">
+            <dl class="settings-dl" style="display:grid; grid-template-columns: 200px 1fr; gap: 12px; font-size:12px; border-top: 1px solid var(--border-soft); padding-top:15px;">
+                <dt style="color:var(--muted)">Router Host</dt><dd id="cfgHost" style="color:var(--text); margin:0;">192.168.29.1</dd>
+                <dt style="color:var(--muted)">Timezone</dt><dd style="color:var(--text); margin:0;">Asia/Kolkata (IST)</dd>
+                <dt style="color:var(--muted)">Sampling Interval</dt><dd id="cfgInterval" style="color:var(--text); margin:0;">60 seconds</dd>
+                <dt style="color:var(--muted)">Dashboard Refresh</dt><dd id="cfgRefresh" style="color:var(--text); margin:0;">15 seconds</dd>
+                <dt style="color:var(--muted)">Database Location</dt><dd style="color:var(--text); margin:0;">data/traffic.db (SQLite WAL)</dd>
+                <dt style="color:var(--muted)">Credentials</dt><dd style="color:var(--teal); margin:0;">[PROTECTED - NEVER EXPOSED]</dd>
+            </dl>
+        </div>
+
+
+    </article>
+
+
+</section>
+
+
+<!-- ========================================================
+     ABOUT
+     ======================================================== -->
+
+<section
+    id="about"
+    class="view"
+>
+
+
+    <div class="heading">
+
+        <div>
+
+            <small>
+                SYSTEM
+            </small>
+
+            <h1>
+                About
+            </h1>
+
+        </div>
+
+    </div>
+
+
+    <article class="panel empty">
+
+
+        <b>
+            [ WIFI MONITOR ]
+        </b>
+
+
+        <h2>
+            Jio WiFi Data Tracker
+        </h2>
+
+
+        <p style="margin-top:15px; line-height:1.7;">
+            A lightweight, dedicated network telemetry and traffic monitor engineered specifically for <strong>JioFiber</strong> and <strong>JioAirFiber</strong> home gateway routers.
+        </p>
+
+        <div style="margin-top:20px; text-align:left; max-width:550px; font-size:12px; color:var(--muted-light); line-height:1.8;">
+            <div>• <strong>Platform Target:</strong> Optimized for Raspberry Pi Zero 2 W</div>
+            <div>• <strong>Preserved Direction Semantics:</strong> Router TX = Download, Router RX = Upload</div>
+            <div>• <strong>Storage Engine:</strong> SQLite 3 with Write-Ahead Logging (WAL)</div>
+            <div>• <strong>Architecture:</strong> Read-only monitoring with full credential isolation</div>
+            <div>• <strong>Timezone Standard:</strong> Asia/Kolkata (IST)</div>
+        </div>
+
+
+    </article>
+
+
+</section>
+
+
+</main>
+
+</div>
+
+
+<!-- ========================================================
+     Dashboard JavaScript
+     ======================================================== -->
+
+<script src="dashboard.js"></script>
+
+
 </body>
 </html>
