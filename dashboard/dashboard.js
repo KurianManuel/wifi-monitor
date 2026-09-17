@@ -1015,7 +1015,7 @@ function initNavigation() {
         });
     }
 
-    const viewAllBtn = document.querySelector(".panel.devices button[data-view='devices']");
+    const viewAllBtn = $("viewAllDevices");
     if (viewAllBtn) {
         viewAllBtn.addEventListener("click", () => {
             switchView("devices");

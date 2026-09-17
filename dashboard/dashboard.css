@@ -1035,6 +1035,324 @@ header > span:last-child b {
 }
 
 
+/* ============================================================
+   Chart SVG elements
+   ============================================================ */
+
+.usage-chart {
+
+    display:
+        block;
+
+    width:
+        100%;
+
+    height:
+        100%;
+
+    overflow:
+        visible;
+}
+
+
+.chart-grid {
+
+    stroke:
+        #1c2325;
+
+    stroke-width:
+        1;
+}
+
+
+.chart-grid-vertical {
+
+    stroke:
+        #17201f;
+
+    stroke-dasharray:
+        3 4;
+}
+
+
+.chart-label {
+
+    fill:
+        #4f595b;
+
+    font-family:
+        "Space Grotesk", Arial, sans-serif;
+
+    font-size:
+        10px;
+}
+
+
+.chart-x-label {
+
+    fill:
+        #4f595b;
+
+    font-size:
+        9px;
+}
+
+
+.chart-y-label {
+
+    fill:
+        #4f595b;
+
+    font-size:
+        9px;
+}
+
+
+.chart-download {
+
+    stroke:
+        #F06021;
+
+    stroke-width:
+        2;
+
+    stroke-linejoin:
+        round;
+
+    stroke-linecap:
+        round;
+}
+
+
+.chart-upload {
+
+    stroke:
+        #6B9CAA;
+
+    stroke-width:
+        2;
+
+    stroke-linejoin:
+        round;
+
+    stroke-linecap:
+        round;
+}
+
+
+.chart-download-point {
+
+    fill:
+        #F06021;
+}
+
+
+.chart-upload-point {
+
+    fill:
+        #6B9CAA;
+}
+
+
+.chart-hover-area {
+
+    fill:
+        transparent;
+
+    cursor:
+        crosshair;
+}
+
+
+.chart-guide {
+
+    stroke:
+        rgba(222, 222, 222, .18);
+
+    stroke-width:
+        1;
+
+    stroke-dasharray:
+        4 3;
+
+    display:
+        none;
+}
+
+
+.chart-guide.active {
+
+    display:
+        block;
+}
+
+
+/* ============================================================
+   Chart tooltip
+   ============================================================ */
+
+.chart-tooltip {
+
+    position:
+        absolute;
+
+    top:
+        22px;
+
+    left:
+        80px;
+
+    min-width:
+        185px;
+
+    padding:
+        12px 16px;
+
+    border:
+        1px solid
+        #2a3335;
+
+    border-radius:
+        8px;
+
+    background:
+        rgba(13, 17, 18, .95);
+
+    backdrop-filter:
+        blur(6px);
+
+    pointer-events:
+        none;
+
+    opacity:
+        0;
+
+    transform:
+        translateY(-4px);
+
+    transition:
+        opacity .15s ease,
+        transform .15s ease;
+
+    z-index:
+        10;
+}
+
+
+.chart-tooltip.visible {
+
+    opacity:
+        1;
+
+    transform:
+        translateY(0);
+}
+
+
+.tooltip-hour {
+
+    margin-bottom:
+        10px;
+
+    color:
+        #d5d8d9;
+
+    font-size:
+        11px;
+
+    font-weight:
+        600;
+
+    letter-spacing:
+        .3px;
+}
+
+
+.tooltip-row {
+
+    display:
+        grid;
+
+    grid-template-columns:
+        10px 1fr auto;
+
+    align-items:
+        center;
+
+    gap:
+        7px;
+
+    padding:
+        4px 0;
+
+    color:
+        #8d9597;
+
+    font-size:
+        10px;
+
+    letter-spacing:
+        .3px;
+}
+
+
+.tooltip-row strong {
+
+    color:
+        #d5d8d9;
+
+    font-size:
+        10px;
+
+    font-weight:
+        500;
+}
+
+
+.tooltip-total {
+
+    margin-top:
+        6px;
+
+    padding-top:
+        8px !important;
+
+    border-top:
+        1px solid
+        #1e2729;
+}
+
+
+.tooltip-dot {
+
+    width:
+        7px;
+
+    height:
+        7px;
+
+    border-radius:
+        50%;
+
+    display:
+        inline-block;
+}
+
+
+.tooltip-dot.download {
+
+    background:
+        #F06021;
+}
+
+
+.tooltip-dot.upload {
+
+    background:
+        #6B9CAA;
+}
+
+
 .chart h3 {
 
     display:
@@ -1409,6 +1727,189 @@ header > span:last-child b {
 
     padding-bottom:
         16px;
+}
+
+
+/* ============================================================
+   Devices panel heading button (VIEW ALL DEVICES)
+   ============================================================ */
+
+.panel.devices h3 button,
+.panel h3 > button {
+
+    height:
+        30px;
+
+    padding:
+        0 12px;
+
+    border:
+        1px solid
+        var(--orange);
+
+    border-radius:
+        6px;
+
+    background:
+        transparent;
+
+    color:
+        var(--orange);
+
+    font-size:
+        10px;
+
+    font-weight:
+        600;
+
+    letter-spacing:
+        .3px;
+
+    cursor:
+        pointer;
+
+    transition:
+        background .15s ease,
+        color .15s ease;
+}
+
+
+.panel.devices h3 button:hover,
+.panel h3 > button:hover {
+
+    background:
+        var(--orange);
+
+    color:
+        #fff;
+}
+
+
+/* ============================================================
+   Device back button
+   ============================================================ */
+
+#deviceBack {
+
+    height:
+        38px;
+
+    padding:
+        0 16px;
+
+    border:
+        1px solid
+        var(--orange);
+
+    border-radius:
+        7px;
+
+    background:
+        transparent;
+
+    color:
+        var(--orange);
+
+    font-size:
+        12px;
+
+    font-weight:
+        500;
+
+    letter-spacing:
+        .2px;
+
+    cursor:
+        pointer;
+
+    white-space:
+        nowrap;
+
+    transition:
+        background .15s ease,
+        color .15s ease;
+}
+
+
+#deviceBack:hover {
+
+    background:
+        var(--orange);
+
+    color:
+        #fff;
+}
+
+
+/* ============================================================
+   Stats grid (used in JS-rendered network stats + overview)
+   ============================================================ */
+
+.stats-grid {
+
+    display:
+        grid;
+
+    grid-template-columns:
+        1fr 1fr;
+
+    column-gap:
+        28px;
+
+    padding:
+        12px 22px 18px;
+}
+
+
+.stats-grid > div {
+
+    min-width:
+        0;
+
+    padding:
+        9px 0;
+
+    border-bottom:
+        1px dashed
+        #202729;
+}
+
+
+.stats-grid span {
+
+    display:
+        block;
+
+    margin-bottom:
+        4px;
+
+    color:
+        #626b6d;
+
+    font-size:
+        8px;
+
+    letter-spacing:
+        .6px;
+}
+
+
+.stats-grid strong {
+
+    display:
+        block;
+
+    color:
+        #cbd0d1;
+
+    font-size:
+        11px;
+
+    font-weight:
+        500;
+
+    overflow-wrap:
+        anywhere;
 }
 
 
@@ -2482,6 +2983,33 @@ tbody tr:hover {
 
 
 /* ============================================================
+   Device history panel
+   ============================================================ */
+
+.device-history {
+
+    width:
+        100%;
+
+    margin-bottom:
+        16px;
+
+    overflow:
+        hidden;
+}
+
+
+.device-daily-chart {
+
+    width:
+        100%;
+
+    min-height:
+        260px;
+}
+
+
+/* ============================================================
    Device daily usage
    ============================================================ */
 
@@ -2783,6 +3311,54 @@ tbody tr:hover {
    History page
    ============================================================ */
 
+#historyContent {
+
+    min-height:
+        200px;
+
+    padding:
+        28px 30px;
+
+    text-align:
+        left;
+}
+
+
+#historyContent b {
+
+    display:
+        block;
+
+    color:
+        var(--orange);
+
+    font-size:
+        11px;
+
+    letter-spacing:
+        1px;
+
+    margin-bottom:
+        10px;
+}
+
+
+#historyContent h2 {
+
+    margin:
+        0 0 8px;
+
+    color:
+        #d9dddd;
+
+    font-size:
+        22px;
+
+    font-weight:
+        500;
+}
+
+
 .history-list {
 
     width:
@@ -2834,6 +3410,68 @@ tbody tr:hover {
 
     font-size:
         11px;
+}
+
+
+/* ============================================================
+   Network page
+   ============================================================ */
+
+#networkContent {
+
+    min-height:
+        200px;
+
+    padding:
+        28px 30px;
+
+    text-align:
+        left;
+}
+
+
+#networkContent b {
+
+    display:
+        block;
+
+    color:
+        var(--orange);
+
+    font-size:
+        11px;
+
+    letter-spacing:
+        1px;
+
+    margin-bottom:
+        10px;
+}
+
+
+#networkContent h2 {
+
+    margin:
+        0 0 8px;
+
+    color:
+        #d9dddd;
+
+    font-size:
+        22px;
+
+    font-weight:
+        500;
+}
+
+
+#networkTelemetryGrid {
+
+    width:
+        100%;
+
+    max-width:
+        780px;
 }
 
 
