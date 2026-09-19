@@ -30,7 +30,15 @@ const DEVICE_COLORS = [
     "#5FAF8F",
     "#D4A84F",
     "#D66A8A",
-    "#7FA8C9"
+    "#7FA8C9",
+    "#E67E22",
+    "#3498DB",
+    "#2ECC71",
+    "#9B59B6",
+    "#1ABC9C",
+    "#E74C3C",
+    "#F39C12",
+    "#16A085"
 ];
 
 // ============================================================
@@ -728,20 +736,45 @@ function renderDailyHistory() {
     const container = $("historyList");
     if (!container) return;
 
-    if (!dailyHistory.length) {
+    const historyMap = {};
+    (dailyHistory || []).forEach(item => {
+        const d = item.date || item.day;
+        if (d) {
+            const key = String(d).substring(0, 10);
+            historyMap[key] = {
+                date: key,
+                download_bytes: Number(item.download_bytes || 0),
+                upload_bytes: Number(item.upload_bytes || 0),
+                total_bytes: Number(item.total_bytes || (Number(item.download_bytes || 0) + Number(item.upload_bytes || 0)))
+            };
+        }
+    });
+
+    const last7 = getLastSevenDates();
+    const allDateSet = new Set([...last7, ...Object.keys(historyMap)]);
+    const sortedDates = Array.from(allDateSet).sort().reverse();
+
+    if (!sortedDates.length) {
         container.innerHTML = `<div class="pending">No daily history available.</div>`;
         return;
     }
 
-    const recent = [...dailyHistory].slice(-30).reverse();
-    container.innerHTML = recent.map(day => `
-        <div class="history-row">
-            <span><strong>${escapeHtml(day.date || day.day)}</strong></span>
-            <span class="orange">↓ ${escapeHtml(formatBytes(day.download_bytes || 0))}</span>
-            <span class="teal">↑ ${escapeHtml(formatBytes(day.upload_bytes || 0))}</span>
-            <strong>${escapeHtml(formatBytes(day.total_bytes || 0))}</strong>
-        </div>
-    `).join("");
+    container.innerHTML = sortedDates.map(date => {
+        const item = historyMap[date] || {
+            date: date,
+            download_bytes: 0,
+            upload_bytes: 0,
+            total_bytes: 0
+        };
+        return `
+            <div class="history-row">
+                <span><strong>${escapeHtml(item.date)}</strong></span>
+                <span class="orange">↓ ${escapeHtml(formatBytes(item.download_bytes))}</span>
+                <span class="teal">↑ ${escapeHtml(formatBytes(item.upload_bytes))}</span>
+                <strong>${escapeHtml(formatBytes(item.total_bytes))}</strong>
+            </div>
+        `;
+    }).join("");
 }
 
 // ============================================================

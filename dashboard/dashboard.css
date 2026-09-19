@@ -1601,8 +1601,11 @@ header > span:last-child b {
 
 .network {
 
+    align-self:
+        start;
+
     min-height:
-        375px;
+        325px;
 
     padding-bottom:
         18px;
@@ -2079,10 +2082,10 @@ header > span:last-child b {
         flex;
 
     justify-content:
-        space-between;
+        flex-start;
 
     gap:
-        10px;
+        20px;
 }
 
 
@@ -2441,7 +2444,7 @@ tbody tr:hover {
         space-between;
 
     gap:
-        30px;
+        20px;
 }
 
 
@@ -2512,7 +2515,13 @@ tbody tr:hover {
 .device-profile-mac {
 
     min-width:
-        250px;
+        auto;
+
+    max-width:
+        280px;
+
+    flex-shrink:
+        0;
 
     padding-left:
         25px;
