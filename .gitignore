@@ -36,3 +36,6 @@ wifi-monitor-old/
 .idea/
 .DS_Store
 Thumbs.db
+
+*.png
+.playwright-cli/
