@@ -20,6 +20,8 @@
 
     --teal: #6B9CAA;
 
+    --purple: #7E8CE0;
+
 
     --background: #0b0e0f;
 
@@ -933,6 +935,108 @@ header > span:last-child b {
 
     color:
         var(--teal);
+}
+
+
+/* ============================================================
+   Billing Cycle Card
+   ============================================================ */
+
+.billing-card {
+
+    border-color:
+        rgba(
+            126,
+            140,
+            224,
+            .55
+        );
+}
+
+.billing-card strong:first-of-type {
+
+    color:
+        var(--purple);
+}
+
+.billing-detail {
+
+    font-size:
+        10px !important;
+    color:
+        #6a7275 !important;
+}
+
+.billing-detail strong {
+
+    font-size:
+        11px !important;
+    font-weight:
+        500;
+}
+
+.billing-bar {
+
+    margin-top:
+        12px;
+    height:
+        8px;
+    background:
+        #1a2021;
+    border-radius:
+        4px;
+    overflow:
+        hidden;
+}
+
+.billing-bar-fill {
+
+    height:
+        100%;
+    background:
+        linear-gradient(
+            90deg,
+            var(--purple),
+            var(--teal)
+        );
+    border-radius:
+        4px;
+    transition:
+        width .4s ease;
+}
+
+.billing-bar-fill.over-limit {
+
+    background:
+        linear-gradient(
+            90deg,
+            #e74c3c,
+            #f39c12
+        );
+}
+
+@media (max-width: 1100px) {
+
+    .cards {
+
+        grid-template-columns:
+            repeat(
+                2,
+                minmax(
+                    0,
+                    1fr
+                )
+            );
+    }
+}
+
+@media (max-width: 700px) {
+
+    .cards {
+
+        grid-template-columns:
+            1fr;
+    }
 }
 
 

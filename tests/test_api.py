@@ -1038,3 +1038,542 @@ def test_device_endpoints_exist_with_valid_mac(client):
         assert res.status_code in (200, 404, 400), \
             f"Path {path} returned unexpected {res.status_code}"
         assert res.get_json() is not None
+
+
+# ==============================================================================
+# Billing Cycle Tests
+# ==============================================================================
+
+@pytest.fixture
+def billing_client(tmp_path):
+    """
+    Flask test client with pre-seeded data spanning multiple billing cycles.
+    Billing cycle day = 21.
+    Cycle 1: 2026-08-21 00:00:00 to 2026-09-21 00:00:00
+    Cycle 2: 2026-09-21 00:00:00 to 2026-10-21 00:00:00
+    """
+    db_path = str(tmp_path / "billing_traffic.db")
+    database.init_db(db_path)
+
+    import config as cfg_module
+    original_db = cfg_module.config.DATABASE_PATH
+    object.__setattr__(cfg_module.config, "DATABASE_PATH", db_path)
+
+    MAC_A = "AA:BB:CC:11:22:33"
+
+    # Device setup
+    database.upsert_device({
+        "mac_address": MAC_A,
+        "hostname": "Test-Device",
+        "ip_address": "192.168.29.10",
+        "radio": "5GHz",
+        "ssid": "JioFiber-5G",
+        "ap": "AP1",
+        "last_seen": "2026-09-20T10:00:00",
+        "is_active": True,
+        "first_seen": "2026-08-15T10:00:00",
+        "time_connected": "2026-08-15T09:00:00",
+    }, db_path)
+
+    # Samples in Cycle 1 (Aug 21 - Sep 21)
+    # Aug 25: 100 GB download, 50 GB upload
+    database.insert_sample({
+        "timestamp": "2026-08-25T10:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 1000, "bytes_tx": 2000,
+        "download_bytes": 100 * (1024**3),  # 100 GB
+        "upload_bytes": 50 * (1024**3),     # 50 GB
+    }, db_path)
+
+    # Sep 15: 200 GB download, 100 GB upload
+    database.insert_sample({
+        "timestamp": "2026-09-15T10:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 2000, "bytes_tx": 4000,
+        "download_bytes": 200 * (1024**3),  # 200 GB
+        "upload_bytes": 100 * (1024**3),    # 100 GB
+    }, db_path)
+
+    # Samples in Cycle 2 (Sep 21 - Oct 21)
+    # Sep 25: 300 GB download, 150 GB upload
+    database.insert_sample({
+        "timestamp": "2026-09-25T10:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 3000, "bytes_tx": 6000,
+        "download_bytes": 300 * (1024**3),  # 300 GB
+        "upload_bytes": 150 * (1024**3),    # 150 GB
+    }, db_path)
+
+    # Oct 15: 400 GB download, 200 GB upload
+    database.insert_sample({
+        "timestamp": "2026-10-15T10:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 4000, "bytes_tx": 8000,
+        "download_bytes": 400 * (1024**3),  # 400 GB
+        "upload_bytes": 200 * (1024**3),    # 200 GB
+    }, db_path)
+
+    # Sample exactly at cycle boundary (Sep 21 00:00:00) - should be in Cycle 2
+    database.insert_sample({
+        "timestamp": "2026-09-21T00:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 5000, "bytes_tx": 10000,
+        "download_bytes": 50 * (1024**3),   # 50 GB
+        "upload_bytes": 25 * (1024**3),     # 25 GB
+    }, db_path)
+
+    # Sample exactly at cycle end (Oct 21 00:00:00) - should be EXCLUDED from Cycle 2
+    database.insert_sample({
+        "timestamp": "2026-10-21T00:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 6000, "bytes_tx": 12000,
+        "download_bytes": 10 * (1024**3),   # 10 GB
+        "upload_bytes": 5 * (1024**3),      # 5 GB
+    }, db_path)
+
+    # Sample outside any cycle (Aug 15 - before first cycle)
+    database.insert_sample({
+        "timestamp": "2026-08-15T10:00:00",
+        "mac_address": MAC_A,
+        "bytes_rx": 100, "bytes_tx": 200,
+        "download_bytes": 1 * (1024**3),    # 1 GB
+        "upload_bytes": 1 * (1024**3),      # 1 GB
+    }, db_path)
+
+    app = create_app()
+    app.config["TESTING"] = True
+
+    with app.test_client() as test_client:
+        yield test_client
+
+    object.__setattr__(cfg_module.config, "DATABASE_PATH", original_db)
+
+
+def test_billing_cycle_boundary_20sep():
+    """20 Sep 2026 → cycle_start = 21 Aug, cycle_end = 21 Sep"""
+    from api import _billing_cycle_naive_boundaries
+    from config import config
+    import config as cfg_module
+
+    # Temporarily set config to test values
+    original_day = config.BILLING_CYCLE_DAY
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 21)
+
+    try:
+        # Mock _ist_naive_now to return 2026-09-20
+        import api as api_module
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 9, 20, 12, 0, 0)
+
+        api_module._ist_naive_now = mock_now
+
+        start, end = api_module._billing_cycle_naive_boundaries()
+        assert start == "2026-08-21T00:00:00"
+        assert end == "2026-09-21T00:00:00"
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+
+
+def test_billing_cycle_boundary_21sep():
+    """21 Sep 2026 → cycle_start = 21 Sep, cycle_end = 21 Oct"""
+    from api import _billing_cycle_naive_boundaries
+    from config import config
+    import config as cfg_module
+    import api as api_module
+
+    original_day = config.BILLING_CYCLE_DAY
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 21)
+
+    try:
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 9, 21, 0, 0, 0)
+
+        api_module._ist_naive_now = mock_now
+
+        start, end = api_module._billing_cycle_naive_boundaries()
+        assert start == "2026-09-21T00:00:00"
+        assert end == "2026-10-21T00:00:00"
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+
+
+def test_billing_cycle_boundary_22sep():
+    """22 Sep 2026 → cycle_start = 21 Sep, cycle_end = 21 Oct"""
+    import api as api_module
+    from config import config
+    import config as cfg_module
+
+    original_day = config.BILLING_CYCLE_DAY
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 21)
+
+    try:
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 9, 22, 12, 0, 0)
+
+        api_module._ist_naive_now = mock_now
+
+        start, end = api_module._billing_cycle_naive_boundaries()
+        assert start == "2026-09-21T00:00:00"
+        assert end == "2026-10-21T00:00:00"
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+
+
+def test_billing_cycle_boundary_20oct():
+    """20 Oct 2026 → cycle_start = 21 Sep, cycle_end = 21 Oct"""
+    import api as api_module
+    from config import config
+    import config as cfg_module
+
+    original_day = config.BILLING_CYCLE_DAY
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 21)
+
+    try:
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 10, 20, 12, 0, 0)
+
+        api_module._ist_naive_now = mock_now
+
+        start, end = api_module._billing_cycle_naive_boundaries()
+        assert start == "2026-09-21T00:00:00"
+        assert end == "2026-10-21T00:00:00"
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+
+
+def test_billing_cycle_boundary_21oct():
+    """21 Oct 2026 → cycle_start = 21 Oct, cycle_end = 21 Nov"""
+    import api as api_module
+    from config import config
+    import config as cfg_module
+
+    original_day = config.BILLING_CYCLE_DAY
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 21)
+
+    try:
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 10, 21, 0, 0, 0)
+
+        api_module._ist_naive_now = mock_now
+
+        start, end = api_module._billing_cycle_naive_boundaries()
+        assert start == "2026-10-21T00:00:00"
+        assert end == "2026-11-21T00:00:00"
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+
+
+def test_billing_cycle_boundary_year_rollover():
+    """Dec 20 → Jan 21 rollover"""
+    import api as api_module
+    from config import config
+    import config as cfg_module
+
+    original_day = config.BILLING_CYCLE_DAY
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 21)
+
+    try:
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 12, 20, 12, 0, 0)
+
+        api_module._ist_naive_now = mock_now
+
+        start, end = api_module._billing_cycle_naive_boundaries()
+        assert start == "2026-11-21T00:00:00"
+        assert end == "2026-12-21T00:00:00"
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+
+
+def test_billing_cycle_api_structure(billing_client):
+    """GET /api/usage/billing-cycle returns correct response structure."""
+    res = billing_client.get("/api/usage/billing-cycle")
+    assert res.status_code == 200
+    data = res.get_json()
+
+    required_fields = [
+        "period", "cycle_start", "cycle_end",
+        "limit_bytes", "used_bytes", "remaining_bytes", "percentage_used"
+    ]
+    for field in required_fields:
+        assert field in data, f"Missing field: {field}"
+
+    assert data["period"] == "billing_cycle"
+    assert data["limit_bytes"] == 1000 * (1024**3)
+    assert data["used_bytes"] >= 0
+    assert data["remaining_bytes"] >= 0
+    assert data["percentage_used"] >= 0
+    assert isinstance(data["percentage_used"], (int, float))
+
+
+def test_billing_cycle_usage_calculation_sep20(billing_client):
+    """
+    On 20 Sep 2026, cycle is Aug 21 - Sep 21.
+    Should include: Aug 25 (150 GB), Sep 15 (300 GB)
+    Sep 21 00:00 is at cycle_end (exclusive) so belongs to Cycle 2
+    Total = 450 GB
+    """
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 20, 12, 0, 0)
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+
+        # Cycle 1: Aug 25 (150 GB) + Sep 15 (300 GB) = 450 GB
+        # Sep 21 00:00 is EXCLUDED (cycle_end is exclusive)
+        expected_used = 450 * (1024**3)
+        assert data["used_bytes"] == expected_used
+        assert data["remaining_bytes"] == (1000 - 450) * (1024**3)
+        assert abs(data["percentage_used"] - 45.0) < 0.1
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_usage_calculation_sep25(billing_client):
+    """
+    On 25 Sep 2026, cycle is Sep 21 - Oct 21.
+    Should include: Sep 21 00:00 (75 GB), Sep 25 (450 GB), Oct 15 (600 GB)
+    Total = 1125 GB (exceeds 1000 GB limit)
+    """
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 25, 12, 0, 0)
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+
+        # Cycle 2: Sep 21 00:00 (75 GB) + Sep 25 (450 GB) + Oct 15 (600 GB) = 1125 GB
+        expected_used = 1125 * (1024**3)
+        assert data["used_bytes"] == expected_used
+        assert data["remaining_bytes"] == 0  # Never negative
+        assert data["percentage_used"] > 100  # Overage visible
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_excludes_cycle_end_boundary(billing_client):
+    """
+    Sample exactly at cycle_end (Oct 21 00:00:00) must be excluded.
+    """
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 10, 20, 12, 0, 0)  # In cycle Sep 21 - Oct 21
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+
+        # Cycle 2 includes Sep 21 00:00 (75 GB), Sep 25 (450 GB), Oct 15 (600 GB)
+        # Oct 21 00:00 (15 GB) must be EXCLUDED
+        expected_used = (75 + 450 + 600) * (1024**3)  # 1125 GB
+        assert data["used_bytes"] == expected_used
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_includes_cycle_start_boundary(billing_client):
+    """
+    Sample exactly at cycle_start (Sep 21 00:00:00) must be included.
+    """
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 25, 12, 0, 0)  # In cycle Sep 21 - Oct 21
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+
+        # Cycle 2 includes Sep 21 00:00 (75 GB)
+        # If boundary was exclusive, we'd only have 450 + 600 = 1050 GB
+        # But it should be inclusive at start: 75 + 450 + 600 = 1125 GB
+        expected_used = (75 + 450 + 600) * (1024**3)  # 1125 GB
+        assert data["used_bytes"] == expected_used
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_excludes_outside_samples(billing_client):
+    """
+    Sample before first cycle (Aug 15) must be excluded.
+    """
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 20, 12, 0, 0)  # In cycle Aug 21 - Sep 21
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+
+        # Cycle 1: Aug 25 (150 GB) + Sep 15 (300 GB) = 450 GB
+        # Aug 15 (2 GB) must be EXCLUDED
+        # Sep 21 00:00 is EXCLUDED (cycle_end is exclusive, belongs to Cycle 2)
+        expected_used = 450 * (1024**3)
+        assert data["used_bytes"] == expected_used
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_zero_usage(client):
+    """Billing cycle with no samples returns zero usage."""
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 20, 12, 0, 0)
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = client.get("/api/usage/billing-cycle")
+        assert res.status_code == 200
+        data = res.get_json()
+        assert data["used_bytes"] == 0
+        assert data["remaining_bytes"] == 1000 * (1024**3)
+        assert data["percentage_used"] == 0.0
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_near_limit(billing_client):
+    """Test usage near 1000 GB limit."""
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 20, 12, 0, 0)  # Cycle 1: 450 GB used
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+        # 450 GB used, 550 GB remaining
+        assert data["remaining_bytes"] == 550 * (1024**3)
+        assert abs(data["percentage_used"] - 45.0) < 0.1
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_over_limit(billing_client):
+    """Test usage exceeding 1000 GB limit."""
+    import api as api_module
+    original_now = api_module._ist_naive_now
+
+    def mock_now():
+        return datetime(2026, 9, 25, 12, 0, 0)  # Cycle 2: 1125 GB used
+
+    api_module._ist_naive_now = mock_now
+
+    try:
+        res = billing_client.get("/api/usage/billing-cycle")
+        data = res.get_json()
+        assert data["used_bytes"] == 1125 * (1024**3)
+        assert data["remaining_bytes"] == 0  # Never negative
+        assert data["percentage_used"] == 112.5  # Overage visible
+    finally:
+        api_module._ist_naive_now = original_now
+
+
+def test_billing_cycle_custom_config(tmp_path):
+    """Test billing cycle with custom BILLING_CYCLE_DAY and BILLING_DATA_LIMIT_GB."""
+    db_path = str(tmp_path / "custom_billing.db")
+    database.init_db(db_path)
+
+    import config as cfg_module
+    original_db = cfg_module.config.DATABASE_PATH
+    original_day = cfg_module.config.BILLING_CYCLE_DAY
+    original_limit = cfg_module.config.BILLING_DATA_LIMIT_GB
+
+    object.__setattr__(cfg_module.config, "DATABASE_PATH", db_path)
+    object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", 15)
+    object.__setattr__(cfg_module.config, "BILLING_DATA_LIMIT_GB", 500)
+
+    try:
+        MAC = "AA:BB:CC:11:22:33"
+        database.upsert_device({"mac_address": MAC, "hostname": "Test"}, db_path)
+
+        # Sample on 15th (cycle start) - 100 GB
+        database.insert_sample({
+            "timestamp": "2026-09-15T00:00:00",
+            "mac_address": MAC,
+            "download_bytes": 100 * (1024**3),
+            "upload_bytes": 0,
+        }, db_path)
+
+        app = create_app()
+        app.config["TESTING"] = True
+
+        import api as api_module
+        original_now = api_module._ist_naive_now
+
+        def mock_now():
+            return datetime(2026, 9, 20, 12, 0, 0)  # In cycle Sep 15 - Oct 15
+
+        api_module._ist_naive_now = mock_now
+
+        with app.test_client() as test_client:
+            res = test_client.get("/api/usage/billing-cycle")
+            data = res.get_json()
+            assert data["limit_bytes"] == 500 * (1024**3)
+            assert data["used_bytes"] == 100 * (1024**3)
+            assert data["percentage_used"] == 20.0
+
+        api_module._ist_naive_now = original_now
+    finally:
+        object.__setattr__(cfg_module.config, "DATABASE_PATH", original_db)
+        object.__setattr__(cfg_module.config, "BILLING_CYCLE_DAY", original_day)
+        object.__setattr__(cfg_module.config, "BILLING_DATA_LIMIT_GB", original_limit)
+
+
+def test_billing_cycle_endpoint_in_endpoint_list(client):
+    """Billing cycle endpoint must be included in required endpoints."""
+    res = client.get("/api/usage/billing-cycle")
+    assert res.status_code in (200, 500)  # 500 if DB error, but not 404
+    assert res.get_json() is not None

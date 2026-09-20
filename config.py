@@ -58,7 +58,11 @@ class Config:
     # Database
     DATABASE_PATH: str = os.getenv("DATABASE_PATH", "data/traffic.db")
     DATA_RETENTION_DAYS: int = int(os.getenv("DATA_RETENTION_DAYS", "0"))  # 0 = retain indefinitely
-    
+
+    # Billing Cycle (AirFiber)
+    BILLING_CYCLE_DAY: int = int(os.getenv("BILLING_CYCLE_DAY", "21"))
+    BILLING_DATA_LIMIT_GB: int = int(os.getenv("BILLING_DATA_LIMIT_GB", "1000"))
+
     # Server
     HOST: str = os.getenv("HOST", "0.0.0.0")
     PORT: int = int(os.getenv("PORT", "5000"))
@@ -83,6 +87,10 @@ class Config:
             raise ValueError(f"Invalid MODE: '{self.MODE}'. Must be 'mock' or 'real'.")
         if self.DATA_RETENTION_DAYS < 0:
             raise ValueError("DATA_RETENTION_DAYS cannot be negative.")
+        if not (1 <= self.BILLING_CYCLE_DAY <= 28):
+            raise ValueError("BILLING_CYCLE_DAY must be between 1 and 28.")
+        if self.BILLING_DATA_LIMIT_GB < 1:
+            raise ValueError("BILLING_DATA_LIMIT_GB must be at least 1.")
 
     def to_safe_dict(self) -> Dict[str, Any]:
         """Return safe configuration dictionary without exposing credentials."""
@@ -95,6 +103,8 @@ class Config:
             "timezone": self.TIMEZONE,
             "database_path": self.DATABASE_PATH,
             "data_retention_days": self.DATA_RETENTION_DAYS,
+            "billing_cycle_day": self.BILLING_CYCLE_DAY,
+            "billing_data_limit_gb": self.BILLING_DATA_LIMIT_GB,
             "host": self.HOST,
             "port": self.PORT,
             "log_level": self.LOG_LEVEL,

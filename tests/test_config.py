@@ -22,6 +22,8 @@ def test_default_config_properties():
         assert cfg.TIMEZONE == "Asia/Kolkata"
         assert cfg.DATA_RETENTION_DAYS == 0
         assert cfg.is_mock is True
+        assert cfg.BILLING_CYCLE_DAY == 21
+        assert cfg.BILLING_DATA_LIMIT_GB == 1000
 
 
 def test_config_validation_valid():
@@ -51,6 +53,26 @@ def test_config_validation_invalid_retention():
         cfg.validate()
 
 
+def test_config_validation_invalid_billing_day():
+    """Verify validation fails on invalid billing cycle day."""
+    cfg = Config(BILLING_CYCLE_DAY=0)
+    with pytest.raises(ValueError, match="BILLING_CYCLE_DAY"):
+        cfg.validate()
+    cfg = Config(BILLING_CYCLE_DAY=29)
+    with pytest.raises(ValueError, match="BILLING_CYCLE_DAY"):
+        cfg.validate()
+
+
+def test_config_validation_invalid_billing_limit():
+    """Verify validation fails on invalid billing data limit."""
+    cfg = Config(BILLING_DATA_LIMIT_GB=0)
+    with pytest.raises(ValueError, match="BILLING_DATA_LIMIT_GB"):
+        cfg.validate()
+    cfg = Config(BILLING_DATA_LIMIT_GB=-10)
+    with pytest.raises(ValueError, match="BILLING_DATA_LIMIT_GB"):
+        cfg.validate()
+
+
 def test_to_safe_dict_never_exposes_password():
     """Verify router password is excluded from dictionary representation."""
     cfg = Config(ROUTER_PASSWORD="SuperSecretPassword123")
@@ -59,6 +81,14 @@ def test_to_safe_dict_never_exposes_password():
     assert "router_password" not in safe
     assert "password" not in safe
     assert "SuperSecretPassword123" not in str(safe)
+
+
+def test_to_safe_dict_includes_billing_config():
+    """Verify billing cycle config is included in safe dict."""
+    cfg = Config(BILLING_CYCLE_DAY=15, BILLING_DATA_LIMIT_GB=500)
+    safe = cfg.to_safe_dict()
+    assert safe["billing_cycle_day"] == 15
+    assert safe["billing_data_limit_gb"] == 500
 
 
 def test_configure_logging():

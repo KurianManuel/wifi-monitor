@@ -112,6 +112,48 @@ def _month_naive_boundaries() -> Tuple[str, str]:
     return start_of_month.isoformat(), end_of_today
 
 
+def _billing_cycle_naive_boundaries() -> Tuple[str, str]:
+    """
+    Return (start_iso, end_iso) for the current AirFiber billing cycle in naive IST.
+
+    Billing cycle starts on BILLING_CYCLE_DAY at 00:00:00 IST and ends on the same
+    day of the following month at 00:00:00 IST (exclusive).
+
+    If current date is on or after the billing day, cycle starts this month.
+    If current date is before the billing day, cycle started previous month.
+    """
+    now_ist = _ist_naive_now()
+    billing_day = config.BILLING_CYCLE_DAY
+
+    # Determine cycle start month/year
+    if now_ist.day >= billing_day:
+        # Current cycle started this month
+        start_year = now_ist.year
+        start_month = now_ist.month
+    else:
+        # Current cycle started previous month
+        if now_ist.month == 1:
+            start_year = now_ist.year - 1
+            start_month = 12
+        else:
+            start_year = now_ist.year
+            start_month = now_ist.month - 1
+
+    start_dt = datetime(start_year, start_month, billing_day, 0, 0, 0)
+
+    # End is exactly one month after start (same day next month at 00:00:00)
+    if start_month == 12:
+        end_year = start_year + 1
+        end_month = 1
+    else:
+        end_year = start_year
+        end_month = start_month + 1
+
+    end_dt = datetime(end_year, end_month, billing_day, 0, 0, 0)
+
+    return start_dt.isoformat(), end_dt.isoformat()
+
+
 def _n_days_naive_start(n: int) -> str:
     """Return naive IST ISO string for midnight n-1 days ago (for last-N-days window)."""
     today_ist = _ist_naive_now().date()
@@ -302,7 +344,41 @@ def get_usage_month():
 
 
 # ---------------------------------------------------------------------------
-# 7. GET /api/usage/daily
+# 7. GET /api/usage/billing-cycle
+# ---------------------------------------------------------------------------
+@api_bp.route("/usage/billing-cycle", methods=["GET"])
+def get_usage_billing_cycle():
+    """
+    Total download/upload/combined traffic for the current AirFiber billing cycle.
+
+    Billing cycle runs from BILLING_CYCLE_DAY 00:00:00 IST to the same day
+    of the following month 00:00:00 IST (exclusive).
+    """
+    try:
+        start_iso, end_iso = _billing_cycle_naive_boundaries()
+        usage = database.get_total_usage_between(start_iso, end_iso)
+
+        limit_bytes = config.BILLING_DATA_LIMIT_GB * (1024 ** 3)  # GB to bytes
+        used_bytes = usage["total_bytes"]
+        remaining_bytes = max(0, limit_bytes - used_bytes)
+        percentage_used = (used_bytes / limit_bytes * 100) if limit_bytes > 0 else 0.0
+
+        return jsonify({
+            "period": "billing_cycle",
+            "cycle_start": start_iso,
+            "cycle_end": end_iso,
+            "limit_bytes": limit_bytes,
+            "used_bytes": used_bytes,
+            "remaining_bytes": remaining_bytes,
+            "percentage_used": round(percentage_used, 2),
+        })
+    except Exception as e:
+        logger.error("Error in /api/usage/billing-cycle: %s", e)
+        return jsonify({"error": "Failed to fetch billing cycle usage"}), 500
+
+
+# ---------------------------------------------------------------------------
+# 8. GET /api/usage/daily
 # ---------------------------------------------------------------------------
 @api_bp.route("/usage/daily", methods=["GET"])
 def get_usage_daily():

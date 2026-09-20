@@ -304,6 +304,49 @@ async function loadTodayUsage() {
     }
 }
 
+async function loadBillingCycle() {
+    try {
+        const data = await getJSON("/usage/billing-cycle");
+        renderBillingCycle(data);
+        return data;
+    } catch (err) {
+        console.error("Billing cycle error:", err);
+        // Set fallback values
+        setText("billingUsed", "--");
+        setText("billingLimit", "--");
+        setText("billingRemaining", "--");
+        setText("billingPct", "--%");
+        setText("billingProgress", "--");
+        if ($("billingBarFill")) $("billingBarFill").style.width = "0%";
+    }
+}
+
+function renderBillingCycle(data) {
+    if (!data) return;
+
+    const used = Number(data.used_bytes || 0);
+    const limit = Number(data.limit_bytes || 0);
+    const remaining = Number(data.remaining_bytes || 0);
+    const pct = Number(data.percentage_used || 0);
+
+    setText("billingUsed", formatBytes(used));
+    setText("billingLimit", formatBytes(limit));
+    setText("billingRemaining", formatBytes(remaining));
+    setText("billingPct", `${pct.toFixed(1)}%`);
+    setText("billingProgress", `${formatBytes(used)} / ${formatBytes(limit)}`);
+
+    const bar = $("billingBarFill");
+    if (bar) {
+        const width = Math.min(100, pct);
+        bar.style.width = `${width}%`;
+        if (pct > 100) {
+            bar.classList.add("over-limit");
+        } else {
+            bar.classList.remove("over-limit");
+        }
+    }
+}
+
 function renderTodayUsage() {
     if (!todayUsage) return;
 
@@ -1230,6 +1273,7 @@ async function refreshAll() {
     await Promise.allSettled([
         loadStatus(),
         loadTodayUsage(),
+        loadBillingCycle(),
         loadHourlyUsage(),
         loadDevices(),
         loadDailyHistory(),
