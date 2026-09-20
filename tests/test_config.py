@@ -2,19 +2,26 @@
 Unit tests for configuration module (Phase 2).
 """
 
+import importlib
 import os
 import pytest
+from unittest.mock import patch
+
+import config as config_module
 from config import Config, load_env_file, configure_logging
 
 
 def test_default_config_properties():
-    """Verify default config values."""
-    cfg = Config()
-    assert cfg.ROUTER_HOST == "192.168.29.1"
-    assert cfg.ROUTER_USERNAME == "admin"
-    assert cfg.TIMEZONE == "Asia/Kolkata"
-    assert cfg.DATA_RETENTION_DAYS == 0
-    assert cfg.is_mock is True
+    """Verify default config values by reloading module with clean environment."""
+    with patch.dict("os.environ", {}, clear=True):
+        # Reload module so Config class defaults are evaluated against clean env
+        reloaded = importlib.reload(config_module)
+        cfg = reloaded.Config()
+        assert cfg.ROUTER_HOST == "192.168.29.1"
+        assert cfg.ROUTER_USERNAME == "admin"
+        assert cfg.TIMEZONE == "Asia/Kolkata"
+        assert cfg.DATA_RETENTION_DAYS == 0
+        assert cfg.is_mock is True
 
 
 def test_config_validation_valid():

@@ -101,6 +101,31 @@ function getDeviceColor(index) {
     return DEVICE_COLORS[index % DEVICE_COLORS.length];
 }
 
+function fitDonutCenterText() {
+    const donutText = $("donutText");
+    const donut = $("donut");
+    if (!donutText || !donut) return;
+
+    // Inner hole diameter is 104px (from CSS .donut::after)
+    // Use 80% of that as max text width = 83.2px, leave comfortable padding
+    const maxWidth = 83;
+    const minFontSize = 14;
+    const maxFontSize = 22;
+
+    // Reset to max size first to measure natural width
+    donutText.style.fontSize = maxFontSize + "px";
+    donutText.style.whiteSpace = "nowrap";
+
+    const textWidth = donutText.offsetWidth;
+
+    if (textWidth > maxWidth) {
+        // Calculate scale factor and apply
+        const scale = maxWidth / textWidth;
+        const newSize = Math.max(minFontSize, Math.round(maxFontSize * scale));
+        donutText.style.fontSize = newSize + "px";
+    }
+}
+
 function timeAgo(timestamp) {
     if (!timestamp) return "--";
     const date = new Date(timestamp);
@@ -330,12 +355,18 @@ function renderDistribution(list, total) {
 
     if (!sorted.length || effectiveTotal <= 0) {
         donut.style.background = "conic-gradient(#4D4D4D 0deg 360deg)";
-        if ($("donutText")) $("donutText").textContent = "0 B";
+        if ($("donutText")) {
+            $("donutText").textContent = "0 B";
+            fitDonutCenterText();
+        }
         container.innerHTML = `<div class="pending">NO USAGE RECORDED YET</div>`;
         return;
     }
 
-    if ($("donutText")) $("donutText").textContent = formatBytes(effectiveTotal);
+    if ($("donutText")) {
+        $("donutText").textContent = formatBytes(effectiveTotal);
+        fitDonutCenterText();
+    }
 
     let currentAngle = 0;
     const segments = [];

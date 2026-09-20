@@ -204,6 +204,8 @@ class DataCollector:
                 "errors_tx": int(c.get("errorsTx", 0)),
                 "dropped_rx": int(c.get("droppedRx", 0)),
                 "dropped_tx": int(c.get("droppedTx", 0)),
+                # Router-provided connection time (preserved as-is)
+                "time_connected": c.get("timeConnected"),
             })
 
         return normalized
@@ -220,6 +222,8 @@ class DataCollector:
         - Polls raw device data
         - Computes traffic deltas per device
         - Saves samples and device metadata to SQLite
+        - Updates device activity state: devices in this poll = active,
+          previously known devices not in this poll = inactive
         - Returns True on success, False on failure
         - Survives all exceptions without crashing the caller
         """
@@ -240,8 +244,12 @@ class DataCollector:
                 # Retry once after re-auth
                 devices_data = self._poll_raw_data()
 
+            # Track MAC addresses seen in this successful poll
+            seen_macs = set()
+
             for dev in devices_data:
                 mac = dev["mac_address"].upper()
+                seen_macs.add(mac)
 
                 curr_rx = dev["bytes_rx"]
                 curr_tx = dev["bytes_tx"]
@@ -281,6 +289,8 @@ class DataCollector:
                 database.insert_sample(sample, self.db_path)
 
                 # Persist / update device metadata
+                # first_seen: set for new devices (DB COALESCE preserves existing)
+                # time_connected: pass through from router (may be None)
                 database.upsert_device(
                     {
                         "mac_address": mac,
@@ -291,9 +301,17 @@ class DataCollector:
                         "ap": dev.get("ap") or "",
                         "last_seen": timestamp,
                         "is_active": True,
+                        "first_seen": timestamp,
+                        "time_connected": dev.get("time_connected"),
                     },
                     self.db_path,
                 )
+
+            # After successful poll: mark previously known devices not seen as inactive
+            # This is only done on a fully successful poll (no exceptions)
+            if seen_macs or not devices_data:
+                # Even an empty successful poll (devices_data == []) should mark all known devices inactive
+                database.mark_devices_inactive_except(list(seen_macs), self.db_path)
 
             if devices_data:
                 logger.debug(

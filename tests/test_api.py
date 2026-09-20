@@ -104,6 +104,8 @@ def seeded_client(tmp_path):
         "ap": "AP1",
         "last_seen": f"{today_str}T10:00:00",
         "is_active": True,
+        "first_seen": f"{seven_days_str}T15:00:00",
+        "time_connected": f"{seven_days_str}T14:30:00",
     }, db_path)
 
     # Device B — only today
@@ -116,6 +118,8 @@ def seeded_client(tmp_path):
         "ap": "AP1",
         "last_seen": f"{today_str}T11:00:00",
         "is_active": True,
+        "first_seen": f"{today_str}T10:00:00",
+        "time_connected": f"{today_str}T09:30:00",
     }, db_path)
 
     # Samples: today — A downloads 1000, uploads 400
@@ -622,11 +626,164 @@ def test_device_detail_returns_identity(seeded_client):
     assert "is_active" in data
 
 
-def test_device_detail_has_usage_periods(seeded_client):
-    """GET /api/devices/<mac> includes today/yesterday/7days/month/all_time breakdowns."""
+def test_device_detail_returns_first_seen(seeded_client):
+    """A. GET /api/devices/<mac> returns first_seen."""
     tc, MAC_A, MAC_B, today, yesterday = seeded_client
     data = tc.get(f"/api/devices/{MAC_A}").get_json()
+    assert "first_seen" in data
+    assert data["first_seen"] is not None
+
+
+def test_device_detail_returns_time_connected(seeded_client):
+    """B. GET /api/devices/<mac> returns time_connected."""
+    tc, MAC_A, MAC_B, today, yesterday = seeded_client
+    data = tc.get(f"/api/devices/{MAC_A}").get_json()
+    assert "time_connected" in data
+
+
+def test_device_detail_returns_is_active(seeded_client):
+    """C. GET /api/devices/<mac> returns is_active."""
+    tc, MAC_A, MAC_B, today, yesterday = seeded_client
+    data = tc.get(f"/api/devices/{MAC_A}").get_json()
+    assert "is_active" in data
+    assert isinstance(data["is_active"], bool)
+
+
+def test_device_detail_time_connected_null_for_legacy_device():
+    """D. A legacy device with time_connected = NULL returns JSON null."""
+    import tempfile
+    import os
+    import database
+    from app import create_app
+
+    fd, db_path = tempfile.mkstemp(suffix=".db")
+    os.close(fd)
+
+    try:
+        database.init_db(db_path)
+
+        # Create legacy device without time_connected (simulate migrated old DB)
+        with database.get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("""
+                INSERT INTO devices (mac_address, hostname, last_seen, is_active, first_seen, time_connected)
+                VALUES (?, ?, ?, 1, ?, NULL)
+            """, ("AA:BB:CC:DD:EE:FF", "LegacyDevice", "2026-09-01T10:00:00", "2026-09-01T10:00:00"))
+            conn.commit()
+
+        import config as cfg_module
+        original_db = cfg_module.config.DATABASE_PATH
+        object.__setattr__(cfg_module.config, "DATABASE_PATH", db_path)
+
+        app = create_app()
+        app.config["TESTING"] = True
+
+        with app.test_client() as client:
+            res = client.get("/api/devices/AA:BB:CC:DD:EE:FF")
+            assert res.status_code == 200
+            data = res.get_json()
+            assert "time_connected" in data
+            assert data["time_connected"] is None
+
+        object.__setattr__(cfg_module.config, "DATABASE_PATH", original_db)
+    finally:
+        if os.path.exists(db_path):
+            os.remove(db_path)
+
+
+def test_device_detail_existing_fields_unchanged(seeded_client):
+    """E. Existing device fields remain unchanged."""
+    tc, MAC_A, MAC_B, today, yesterday = seeded_client
+    data = tc.get(f"/api/devices/{MAC_A}").get_json()
+    # Verify all original identity fields
+    assert data["mac_address"] == MAC_A
+    assert data["hostname"] == "Laptop-Alpha"
+    assert data["ip_address"] == "192.168.29.10"
+    assert data["radio"] == "5GHz"
+    assert data["ssid"] == "JioFiber-5G"
+    assert data["ap"] == "AP1"
+    assert "last_seen" in data
+    assert "is_active" in data
+    # Verify usage structure
     assert "usage" in data
+    for period in ["today", "yesterday", "last_7_days", "this_month", "all_time"]:
+        assert period in data["usage"]
+
+
+def test_device_list_exposes_is_active(seeded_client):
+    """F. GET /api/devices exposes is_active."""
+    tc, MAC_A, MAC_B, today, yesterday = seeded_client
+    data = tc.get("/api/devices").get_json()
+    assert "devices" in data
+    assert len(data["devices"]) >= 1
+    for dev in data["devices"]:
+        assert "is_active" in dev
+        assert isinstance(dev["is_active"], (bool, int))
+
+
+def test_device_detail_404_for_missing_device(client):
+    """G. Missing device still returns appropriate HTTP error."""
+    res = client.get("/api/devices/AA:BB:CC:DD:EE:FF")
+    assert res.status_code == 404
+    data = res.get_json()
+    assert "error" in data
+    assert data["mac_address"] == "AA:BB:CC:DD:EE:FF"
+
+
+def test_api_no_credentials_in_response(seeded_client):
+    """H. No credentials/tokens/session data appear in any API response."""
+    tc, MAC_A, MAC_B, today, yesterday = seeded_client
+
+    endpoints = [
+        "/api/status",
+        "/api/devices",
+        f"/api/devices/{MAC_A}",
+        f"/api/devices/{MAC_A}/daily",
+        f"/api/devices/{MAC_A}/stats",
+        "/api/usage/today",
+        "/api/usage/yesterday",
+        "/api/usage/7days",
+        "/api/usage/month",
+        "/api/usage/daily",
+        "/api/usage/hourly",
+        "/api/network/stats",
+    ]
+
+    forbidden_keys = {"password", "bearer", "sysauth", "token", "loggedId", "logged_id"}
+
+    for endpoint in endpoints:
+        res = tc.get(endpoint)
+        assert res.status_code == 200, f"Endpoint {endpoint} failed"
+        data = res.get_json()
+        # Recursively check for forbidden keys
+        def check_forbidden(obj, path=""):
+            if isinstance(obj, dict):
+                for k, v in obj.items():
+                    if k.lower() in forbidden_keys:
+                        raise AssertionError(f"Forbidden key '{k}' found at {path}")
+                    check_forbidden(v, f"{path}.{k}")
+            elif isinstance(obj, list):
+                for i, v in enumerate(obj):
+                    check_forbidden(v, f"{path}[{i}]")
+        check_forbidden(data)
+
+def test_device_detail_has_new_fields_structure(seeded_client):
+    """Verify the complete device detail response includes all new fields."""
+    tc, MAC_A, MAC_B, today, yesterday = seeded_client
+    data = tc.get(f"/api/devices/{MAC_A}").get_json()
+
+    # Identity fields (including new ones)
+    required_fields = [
+        "mac_address", "hostname", "ip_address", "radio", "ssid", "ap",
+        "last_seen", "first_seen", "time_connected", "is_active"
+    ]
+    for field in required_fields:
+        assert field in data, f"Missing field: {field}"
+
+    # first_seen should be present (may be None for legacy, but field exists)
+    # time_connected may be None
+    # is_active should be boolean
+    assert isinstance(data["is_active"], bool)
     usage = data["usage"]
     for period in ["today", "yesterday", "last_7_days", "this_month", "all_time"]:
         assert period in usage, f"Missing period '{period}' in usage"

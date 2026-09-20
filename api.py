@@ -107,7 +107,9 @@ def _month_naive_boundaries() -> Tuple[str, str]:
     """Return (start_iso, end_iso) for the current IST calendar month."""
     now_ist = _ist_naive_now()
     start_of_month = datetime(now_ist.year, now_ist.month, 1, 0, 0, 0)
-    return start_of_month.isoformat(), now_ist.isoformat()
+    # End should be end of current IST day (midnight next day), not current time
+    end_of_today = _day_naive_boundaries(0)[1]
+    return start_of_month.isoformat(), end_of_today
 
 
 def _n_days_naive_start(n: int) -> str:
@@ -261,7 +263,8 @@ def get_usage_7days():
     """Total download/upload/combined traffic for the last 7 calendar days (IST)."""
     try:
         start_iso = _n_days_naive_start(7)
-        end_iso = _ist_naive_now().isoformat()
+        # Use end of current IST day (midnight tomorrow) for deterministic calendar-day boundary
+        end_iso = _day_naive_boundaries(0)[1]
         usage = database.get_total_usage_between(start_iso, end_iso)
         return jsonify({
             "period": "7days",
@@ -496,6 +499,8 @@ def get_device_details(mac: str):
             "ssid": device.get("ssid"),
             "ap": device.get("ap"),
             "last_seen": device.get("last_seen"),
+            "first_seen": device.get("first_seen"),
+            "time_connected": device.get("time_connected"),
             "is_active": bool(device.get("is_active", 1)),
             "usage": {
                 "all_time": {

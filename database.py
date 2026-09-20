@@ -55,10 +55,10 @@ def get_db_connection(db_path: Optional[str] = None) -> Generator[sqlite3.Connec
 
 
 def init_db(db_path: Optional[str] = None) -> None:
-    """Initialize database tables and indexes."""
+    """Initialize database tables and indexes, with migration for existing databases."""
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
-        
+
         # Main traffic samples table
         cursor.execute("""
             CREATE TABLE IF NOT EXISTS traffic_samples (
@@ -88,14 +88,49 @@ def init_db(db_path: Optional[str] = None) -> None:
                 ssid TEXT,
                 ap TEXT,
                 last_seen TEXT NOT NULL,
-                is_active INTEGER NOT NULL DEFAULT 1
+                is_active INTEGER NOT NULL DEFAULT 1,
+                first_seen TEXT,
+                time_connected TEXT
             );
         """)
+
+        # Migration: add first_seen and time_connected columns to existing databases
+        _migrate_devices_table(cursor)
 
         # Performance indexes
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_samples_timestamp ON traffic_samples(timestamp);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_samples_mac ON traffic_samples(mac_address);")
         cursor.execute("CREATE INDEX IF NOT EXISTS idx_samples_timestamp_mac ON traffic_samples(timestamp, mac_address);")
+
+
+def _migrate_devices_table(cursor: sqlite3.Cursor) -> None:
+    """
+    Safely add first_seen and time_connected columns to existing devices table.
+    Idempotent: safe to run multiple times.
+    """
+    # Check existing columns
+    cursor.execute("PRAGMA table_info(devices);")
+    columns = {row["name"] for row in cursor.fetchall()}
+
+    # Add first_seen column if missing
+    if "first_seen" not in columns:
+        cursor.execute("ALTER TABLE devices ADD COLUMN first_seen TEXT;")
+        # For existing devices, use earliest traffic_samples timestamp as first_seen
+        # when available; otherwise fall back to last_seen.
+        # This avoids fabricating historical data while using actual observed data.
+        cursor.execute("""
+            UPDATE devices
+            SET first_seen = COALESCE((
+                SELECT MIN(timestamp) FROM traffic_samples
+                WHERE traffic_samples.mac_address = devices.mac_address
+            ), last_seen)
+            WHERE first_seen IS NULL;
+        """)
+
+    # Add time_connected column if missing
+    if "time_connected" not in columns:
+        cursor.execute("ALTER TABLE devices ADD COLUMN time_connected TEXT;")
+        # Existing rows keep NULL (no historical router data available)
 
 
 def insert_sample(sample: Dict[str, Any], db_path: Optional[str] = None) -> int:
@@ -138,8 +173,8 @@ def upsert_device(device_info: Dict[str, Any], db_path: Optional[str] = None) ->
     with get_db_connection(db_path) as conn:
         cursor = conn.cursor()
         cursor.execute("""
-            INSERT INTO devices (mac_address, hostname, ip_address, radio, ssid, ap, last_seen, is_active)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            INSERT INTO devices (mac_address, hostname, ip_address, radio, ssid, ap, last_seen, is_active, first_seen, time_connected)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             ON CONFLICT(mac_address) DO UPDATE SET
                 hostname = COALESCE(excluded.hostname, devices.hostname),
                 ip_address = COALESCE(excluded.ip_address, devices.ip_address),
@@ -147,7 +182,9 @@ def upsert_device(device_info: Dict[str, Any], db_path: Optional[str] = None) ->
                 ssid = COALESCE(excluded.ssid, devices.ssid),
                 ap = COALESCE(excluded.ap, devices.ap),
                 last_seen = excluded.last_seen,
-                is_active = excluded.is_active;
+                is_active = excluded.is_active,
+                first_seen = COALESCE(devices.first_seen, excluded.first_seen),
+                time_connected = excluded.time_connected;
         """, (
             device_info["mac_address"].upper(),
             device_info.get("hostname"),
@@ -157,7 +194,36 @@ def upsert_device(device_info: Dict[str, Any], db_path: Optional[str] = None) ->
             device_info.get("ap"),
             device_info.get("last_seen", datetime.now().isoformat()),
             1 if device_info.get("is_active", True) else 0,
+            device_info.get("first_seen"),
+            device_info.get("time_connected"),
         ))
+
+
+def mark_devices_inactive_except(active_macs: List[str], db_path: Optional[str] = None) -> int:
+    """
+    Mark all known devices as inactive except those in the active_macs list.
+
+    Used by the collector after a successful poll to update device activity state.
+    Only call this on a FULLY SUCCESSFUL poll (no exceptions, no failed retries).
+
+    Returns the number of devices whose is_active state changed to 0.
+    """
+    if not active_macs:
+        # Empty list = all devices become inactive
+        with get_db_connection(db_path) as conn:
+            cursor = conn.cursor()
+            cursor.execute("UPDATE devices SET is_active = 0 WHERE is_active = 1;")
+            return cursor.rowcount
+
+    # Use parameterized query with IN clause
+    placeholders = ",".join("?" for _ in active_macs)
+    with get_db_connection(db_path) as conn:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"UPDATE devices SET is_active = 0 WHERE is_active = 1 AND mac_address NOT IN ({placeholders});",
+            active_macs,
+        )
+        return cursor.rowcount
 
 
 def get_latest_sample_for_mac(mac_address: str, db_path: Optional[str] = None) -> Optional[Dict[str, Any]]:
