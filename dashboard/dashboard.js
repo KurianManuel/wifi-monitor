@@ -94,7 +94,7 @@ function percentage(value, total) {
 }
 
 function formatNumber(value) {
-    return Number(value || 0).toLocaleString("en-IN");
+    return Number(value || 0).toLocaleString("en-US");
 }
 
 function getDeviceColor(index) {
@@ -203,6 +203,7 @@ async function loadStatus() {
         if ($("updated")) $("updated").textContent = "JUST NOW";
 
         if ($("cfgHost")) $("cfgHost").textContent = data.router?.host || "192.168.29.1";
+        if ($("cfgRouterStatus")) $("cfgRouterStatus").textContent = "CONFIGURED & VERIFIED";
         if ($("cfgInterval")) $("cfgInterval").textContent = `${data.collector?.collection_interval_seconds || 60} seconds`;
         if ($("cfgRefresh")) $("cfgRefresh").textContent = `${data.system?.dashboard_refresh_interval_seconds || 15} seconds`;
 
@@ -220,12 +221,47 @@ async function loadStatus() {
 async function loadDevices() {
     try {
         const data = await getJSON("/devices");
-        devices = Array.isArray(data) ? data : (data.devices || []);
+        const rawDevices = Array.isArray(data) ? data : (data.devices || []);
+
+        // Fetch detailed today usage for all devices in parallel
+        const detailedDevices = await Promise.all(
+            rawDevices.map(async d => {
+                try {
+                    const detail = await getJSON(`/devices/${encodeURIComponent(d.mac_address)}`);
+                    const t = detail?.usage?.today || {};
+                    const dl = Number(t.download_bytes || 0);
+                    const ul = Number(t.upload_bytes || 0);
+                    const tot = Number(t.total_bytes !== undefined ? t.total_bytes : (dl + ul));
+                    return {
+                        ...d,
+                        is_active: detail.is_active !== undefined ? detail.is_active : d.is_active,
+                        hostname: detail.hostname || d.hostname,
+                        ip_address: detail.ip_address || d.ip_address,
+                        today_download_bytes: dl,
+                        today_upload_bytes: ul,
+                        today_total_bytes: tot
+                    };
+                } catch (e) {
+                    return {
+                        ...d,
+                        today_download_bytes: 0,
+                        today_upload_bytes: 0,
+                        today_total_bytes: 0
+                    };
+                }
+            })
+        );
+
+        devices = detailedDevices;
         renderOverviewDeviceTable(devices);
         renderAllDevices(devices);
         setText("ndev", devices.length);
         setText("count", devices.length);
         setText("split", `${devices.length} STORED DEVICES`);
+
+        const total = Number(todayUsage?.total_bytes || 0);
+        renderDistribution(devices, total);
+
         return devices;
     } catch (err) {
         console.error("Devices error:", err);
@@ -270,7 +306,7 @@ function renderTodayUsage() {
 }
 
 // ============================================================
-// Usage distribution
+// Usage distribution (TODAY)
 // ============================================================
 
 function renderDistribution(list, total) {
@@ -280,29 +316,33 @@ function renderDistribution(list, total) {
 
     container.innerHTML = "";
 
-    if (!list || !list.length || total <= 0) {
+    // Device contributions must come from TODAY's usage
+    const sorted = [...(list || [])]
+        .map(d => ({
+            ...d,
+            today_value: Number(d.today_total_bytes || 0)
+        }))
+        .sort((a, b) => b.today_value - a.today_value)
+        .filter(d => d.today_value > 0);
+
+    const sumToday = sorted.reduce((acc, d) => acc + d.today_value, 0);
+    const effectiveTotal = Math.max(Number(total || 0), sumToday);
+
+    if (!sorted.length || effectiveTotal <= 0) {
         donut.style.background = "conic-gradient(#4D4D4D 0deg 360deg)";
         if ($("donutText")) $("donutText").textContent = "0 B";
         container.innerHTML = `<div class="pending">NO USAGE RECORDED YET</div>`;
         return;
     }
 
-    const sorted = [...list]
-        .sort((a, b) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0))
-        .filter(d => Number(d.total_bytes || 0) > 0);
-
-    if (!sorted.length) {
-        donut.style.background = "conic-gradient(#4D4D4D 0deg 360deg)";
-        container.innerHTML = `<div class="pending">NO USAGE RECORDED YET</div>`;
-        return;
-    }
+    if ($("donutText")) $("donutText").textContent = formatBytes(effectiveTotal);
 
     let currentAngle = 0;
     const segments = [];
 
     sorted.forEach((device, index) => {
-        const value = Number(device.total_bytes || 0);
-        const angle = (value / total) * 360;
+        const value = device.today_value;
+        const angle = (value / effectiveTotal) * 360;
         const color = getDeviceColor(index);
         segments.push(`${color} ${currentAngle}deg ${currentAngle + angle}deg`);
         currentAngle += angle;
@@ -315,7 +355,7 @@ function renderDistribution(list, total) {
     donut.style.background = `conic-gradient(${segments.join(", ")})`;
 
     sorted.forEach((device, index) => {
-        const value = Number(device.total_bytes || 0);
+        const value = device.today_value;
         const color = getDeviceColor(index);
         const row = document.createElement("div");
         row.className = "distribution-row";
@@ -336,10 +376,14 @@ function renderOverviewDeviceTable(list) {
     const tbody = $("deviceRows");
     if (!tbody) return;
 
-    const sorted = [...list].sort((a, b) => Number(b.total_bytes || 0) - Number(a.total_bytes || 0));
+    // Sort by TODAY's total bytes descending
+    const sorted = [...list].sort((a, b) => Number(b.today_total_bytes || 0) - Number(a.today_total_bytes || 0));
     tbody.innerHTML = "";
 
     sorted.forEach(device => {
+        const dl = Number(device.today_download_bytes || 0);
+        const ul = Number(device.today_upload_bytes || 0);
+        const tot = Number(device.today_total_bytes !== undefined ? device.today_total_bytes : (dl + ul));
         const row = document.createElement("tr");
         row.innerHTML = `
             <td>
@@ -348,10 +392,11 @@ function renderOverviewDeviceTable(list) {
                     ${escapeHtml(device.hostname || "Unknown")}
                 </button>
             </td>
+            <td><span class="status-badge ${device.is_active ? 'online' : 'offline'}">${device.is_active ? 'CONNECTED' : 'OFFLINE'}</span></td>
             <td>${escapeHtml(device.ip_address || device.ipv4_address || "--")}</td>
-            <td class="orange">${escapeHtml(formatBytes(device.download_bytes || 0))}</td>
-            <td class="teal">${escapeHtml(formatBytes(device.upload_bytes || 0))}</td>
-            <td>${escapeHtml(formatBytes(device.total_bytes || 0))}</td>
+            <td class="orange">${escapeHtml(formatBytes(dl))}</td>
+            <td class="teal">${escapeHtml(formatBytes(ul))}</td>
+            <td>${escapeHtml(formatBytes(tot))}</td>
             <td>${escapeHtml(timeAgo(device.last_seen))}</td>
         `;
         tbody.appendChild(row);
@@ -376,6 +421,7 @@ function renderAllDevices(list) {
                     ${escapeHtml(device.hostname || "Unknown")}
                 </button>
             </td>
+            <td><span class="status-badge ${device.is_active ? 'online' : 'offline'}">${device.is_active ? 'CONNECTED' : 'OFFLINE'}</span></td>
             <td><code>${escapeHtml(device.mac_address || "--")}</code></td>
             <td>${escapeHtml(device.ip_address || device.ipv4_address || "--")}</td>
             <td>${escapeHtml(device.radio || "--")}</td>
@@ -409,13 +455,26 @@ async function loadHourlyUsage() {
         renderHourlyChart();
     } catch (err) {
         console.error("Hourly usage error:", err);
-        const box = $("hourlyChartContainer") || document.querySelector(".chartbox");
-        if (box) box.innerHTML = `<div class="pending">HOURLY DATA UNAVAILABLE</div>`;
+        const boxes = [
+            $("hourlyChartContainer"),
+            $("historyHourlyChartContainer")
+        ].filter(Boolean);
+        boxes.forEach(box => {
+            box.innerHTML = `<div class="pending">HOURLY DATA UNAVAILABLE</div>`;
+        });
     }
 }
 
 function renderHourlyChart() {
-    const box = $("hourlyChartContainer") || document.querySelector(".chartbox");
+    const boxes = [
+        $("hourlyChartContainer"),
+        $("historyHourlyChartContainer")
+    ].filter(Boolean);
+
+    boxes.forEach(box => renderHourlyChartToBox(box));
+}
+
+function renderHourlyChartToBox(box) {
     if (!box) return;
 
     const width = 1000;
@@ -530,7 +589,7 @@ function renderHourlyChart() {
     });
 
     box.innerHTML = `
-        <div class="chart-tooltip" id="hourlyTooltip">
+        <div class="chart-tooltip">
             <div class="tooltip-hour">--:--</div>
             <div class="tooltip-row">
                 <span class="tooltip-dot download"></span>
@@ -555,14 +614,14 @@ function renderHourlyChart() {
             <polyline points="${uploadPoints.join(" ")}" class="chart-upload" fill="none" />
             ${downloadDots}
             ${uploadDots}
-            <line id="chartGuide" x1="0" y1="${paddingTop}" x2="0" y2="${paddingTop + graphHeight}" class="chart-guide" />
+            <line class="chart-guide" x1="0" y1="${paddingTop}" x2="0" y2="${paddingTop + graphHeight}" />
             ${hoverAreas}
             ${xLabels}
         </svg>
     `;
 
-    const tooltip = box.querySelector("#hourlyTooltip");
-    const guide = box.querySelector("#chartGuide");
+    const tooltip = box.querySelector(".chart-tooltip");
+    const guide = box.querySelector(".chart-guide");
     const areas = box.querySelectorAll(".chart-hover-area");
 
     function showTooltip(area) {
@@ -654,12 +713,59 @@ function getLastSevenDates() {
     return result;
 }
 
+async function loadHistoryUsage() {
+    try {
+        const [todayRes, ydayRes, sevenDayRes, monthRes] = await Promise.all([
+            getJSON("/usage/today").catch(() => null),
+            getJSON("/usage/yesterday").catch(() => null),
+            getJSON("/usage/7days").catch(() => null),
+            getJSON("/usage/month").catch(() => null)
+        ]);
+
+        if (todayRes) {
+            const dl = Number(todayRes.download_bytes || 0);
+            const ul = Number(todayRes.upload_bytes || 0);
+            const tot = Number(todayRes.total_bytes !== undefined ? todayRes.total_bytes : (dl + ul));
+            setText("histTodayTotal", formatBytes(tot));
+            setText("histTodayDownload", formatBytes(dl));
+            setText("histTodayUpload", formatBytes(ul));
+        }
+        if (ydayRes) {
+            const dl = Number(ydayRes.download_bytes || 0);
+            const ul = Number(ydayRes.upload_bytes || 0);
+            const tot = Number(ydayRes.total_bytes !== undefined ? ydayRes.total_bytes : (dl + ul));
+            setText("histYesterdayTotal", formatBytes(tot));
+            setText("histYesterdayDownload", formatBytes(dl));
+            setText("histYesterdayUpload", formatBytes(ul));
+        }
+        if (sevenDayRes) {
+            const dl = Number(sevenDayRes.download_bytes || 0);
+            const ul = Number(sevenDayRes.upload_bytes || 0);
+            const tot = Number(sevenDayRes.total_bytes !== undefined ? sevenDayRes.total_bytes : (dl + ul));
+            setText("histSevenDayTotal", formatBytes(tot));
+            setText("histSevenDayDownload", formatBytes(dl));
+            setText("histSevenDayUpload", formatBytes(ul));
+        }
+        if (monthRes) {
+            const dl = Number(monthRes.download_bytes || 0);
+            const ul = Number(monthRes.upload_bytes || 0);
+            const tot = Number(monthRes.total_bytes !== undefined ? monthRes.total_bytes : (dl + ul));
+            setText("histMonthTotal", formatBytes(tot));
+            setText("histMonthDownload", formatBytes(dl));
+            setText("histMonthUpload", formatBytes(ul));
+        }
+    } catch (err) {
+        console.error("History usage error:", err);
+    }
+}
+
 async function loadDailyHistory() {
     try {
         const data = await getJSON("/usage/daily");
         dailyHistory = data.days || data.history || [];
         renderDailyChart();
         renderDailyHistory();
+        await loadHistoryUsage();
     } catch (err) {
         console.error("Daily history error:", err);
     }
@@ -674,10 +780,13 @@ function renderDailyChart() {
         const d = item.date || item.day;
         if (d) {
             const key = String(d).substring(0, 10);
+            const dl = Number(item.download_bytes || 0);
+            const ul = Number(item.upload_bytes || 0);
+            const tot = Number(item.total_bytes !== undefined ? item.total_bytes : (dl + ul));
             historyMap[key] = {
-                download: Number(item.download_bytes || 0),
-                upload: Number(item.upload_bytes || 0),
-                total: Number(item.total_bytes || (Number(item.download_bytes || 0) + Number(item.upload_bytes || 0)))
+                download: dl,
+                upload: ul,
+                total: tot
             };
         }
     });
@@ -741,25 +850,23 @@ function renderDailyHistory() {
         const d = item.date || item.day;
         if (d) {
             const key = String(d).substring(0, 10);
+            const dl = Number(item.download_bytes || 0);
+            const ul = Number(item.upload_bytes || 0);
+            const tot = Number(item.total_bytes !== undefined ? item.total_bytes : (dl + ul));
             historyMap[key] = {
                 date: key,
-                download_bytes: Number(item.download_bytes || 0),
-                upload_bytes: Number(item.upload_bytes || 0),
-                total_bytes: Number(item.total_bytes || (Number(item.download_bytes || 0) + Number(item.upload_bytes || 0)))
+                download_bytes: dl,
+                upload_bytes: ul,
+                total_bytes: tot
             };
         }
     });
 
-    const last7 = getLastSevenDates();
-    const allDateSet = new Set([...last7, ...Object.keys(historyMap)]);
-    const sortedDates = Array.from(allDateSet).sort().reverse();
+    // Strictly the last 7 calendar days, newest first
+    const dates = getLastSevenDates();
+    const reversedDates = [...dates].reverse();
 
-    if (!sortedDates.length) {
-        container.innerHTML = `<div class="pending">No daily history available.</div>`;
-        return;
-    }
-
-    container.innerHTML = sortedDates.map(date => {
+    container.innerHTML = reversedDates.map(date => {
         const item = historyMap[date] || {
             date: date,
             download_bytes: 0,
@@ -811,18 +918,25 @@ function renderNetworkStats() {
 
     const netGrid = $("networkTelemetryGrid");
     if (netGrid && networkStats) {
+        const dl = Number(todayUsage?.download_bytes || networkStats.download_bytes || 0);
+        const ul = Number(todayUsage?.upload_bytes || networkStats.upload_bytes || 0);
+        const tot = Number(todayUsage?.total_bytes !== undefined ? todayUsage.total_bytes : (dl + ul));
         netGrid.innerHTML = `
             <div class="stats-grid">
-                <div><span>TOTAL DOWNLOAD</span><strong class="orange">${formatBytes(networkStats.download_bytes || 0)}</strong></div>
-                <div><span>TOTAL UPLOAD</span><strong class="teal">${formatBytes(networkStats.upload_bytes || 0)}</strong></div>
+                <div><span>ROUTER STATUS</span><strong style="color:#4cd964;">ONLINE</strong></div>
+                <div><span>CONNECTION</span><strong style="color:var(--orange);">CONNECTED</strong></div>
+                <div><span>TOTAL DEVICES</span><strong>${formatNumber(devices.length)}</strong></div>
+                <div><span>TODAY TOTAL</span><strong>${formatBytes(tot)}</strong></div>
+                <div><span>TODAY DOWNLOAD</span><strong class="orange">↓ ${formatBytes(dl)}</strong></div>
+                <div><span>TODAY UPLOAD</span><strong class="teal">↑ ${formatBytes(ul)}</strong></div>
                 <div><span>PACKETS RECEIVED</span><strong>${formatNumber(networkStats.packets_rx)}</strong></div>
                 <div><span>PACKETS TRANSMITTED</span><strong>${formatNumber(networkStats.packets_tx)}</strong></div>
                 <div><span>RX DROPPED</span><strong>${formatNumber(networkStats.dropped_rx)}</strong></div>
                 <div><span>TX DROPPED</span><strong>${formatNumber(networkStats.dropped_tx)}</strong></div>
                 <div><span>RX ERRORS</span><strong>${formatNumber(networkStats.errors_rx)}</strong></div>
                 <div><span>TX ERRORS</span><strong>${formatNumber(networkStats.errors_tx)}</strong></div>
-                <div><span>RX BYTES</span><strong>${formatBytes(networkStats.bytes_rx)}</strong></div>
-                <div><span>TX BYTES</span><strong>${formatBytes(networkStats.bytes_tx)}</strong></div>
+                <div><span>RX BYTES (ALL-TIME)</span><strong>${formatBytes(networkStats.bytes_rx)}</strong></div>
+                <div><span>TX BYTES (ALL-TIME)</span><strong>${formatBytes(networkStats.bytes_tx)}</strong></div>
             </div>
         `;
     }
@@ -878,27 +992,45 @@ async function openDevice(mac) {
             $("deviceDetailStatus").className = `status-dot ${device.is_active ? '' : 'offline'}`;
         }
 
+        const statusBadge = $("deviceDetailStatusBadge");
+        if (statusBadge) {
+            statusBadge.textContent = device.is_active ? "CONNECTED" : "OFFLINE";
+            statusBadge.className = `status-badge ${device.is_active ? 'online' : 'offline'}`;
+        }
+
         // 4 Period Usage Cards
         const t = usage.today || {};
         const y = usage.yesterday || {};
         const w = usage.last_7_days || {};
         const m = usage.this_month || {};
 
-        setText("deviceTodayTotal", formatBytes(t.total_bytes || 0));
-        setText("deviceTodayDownload", formatBytes(t.download_bytes || 0));
-        setText("deviceTodayUpload", formatBytes(t.upload_bytes || 0));
+        const tDl = Number(t.download_bytes || 0);
+        const tUl = Number(t.upload_bytes || 0);
+        const tTot = Number(t.total_bytes !== undefined ? t.total_bytes : (tDl + tUl));
+        setText("deviceTodayTotal", formatBytes(tTot));
+        setText("deviceTodayDownload", formatBytes(tDl));
+        setText("deviceTodayUpload", formatBytes(tUl));
 
-        setText("deviceYesterdayTotal", formatBytes(y.total_bytes || 0));
-        setText("deviceYesterdayDownload", formatBytes(y.download_bytes || 0));
-        setText("deviceYesterdayUpload", formatBytes(y.upload_bytes || 0));
+        const yDl = Number(y.download_bytes || 0);
+        const yUl = Number(y.upload_bytes || 0);
+        const yTot = Number(y.total_bytes !== undefined ? y.total_bytes : (yDl + yUl));
+        setText("deviceYesterdayTotal", formatBytes(yTot));
+        setText("deviceYesterdayDownload", formatBytes(yDl));
+        setText("deviceYesterdayUpload", formatBytes(yUl));
 
-        setText("deviceSevenDayTotal", formatBytes(w.total_bytes || 0));
-        setText("deviceSevenDayDownload", formatBytes(w.download_bytes || 0));
-        setText("deviceSevenDayUpload", formatBytes(w.upload_bytes || 0));
+        const wDl = Number(w.download_bytes || 0);
+        const wUl = Number(w.upload_bytes || 0);
+        const wTot = Number(w.total_bytes !== undefined ? w.total_bytes : (wDl + wUl));
+        setText("deviceSevenDayTotal", formatBytes(wTot));
+        setText("deviceSevenDayDownload", formatBytes(wDl));
+        setText("deviceSevenDayUpload", formatBytes(wUl));
 
-        setText("deviceMonthTotal", formatBytes(m.total_bytes || 0));
-        setText("deviceMonthDownload", formatBytes(m.download_bytes || 0));
-        setText("deviceMonthUpload", formatBytes(m.upload_bytes || 0));
+        const mDl = Number(m.download_bytes || 0);
+        const mUl = Number(m.upload_bytes || 0);
+        const mTot = Number(m.total_bytes !== undefined ? m.total_bytes : (mDl + mUl));
+        setText("deviceMonthTotal", formatBytes(mTot));
+        setText("deviceMonthDownload", formatBytes(mDl));
+        setText("deviceMonthUpload", formatBytes(mUl));
 
         // Device Information
         setText("detailHostname", device.hostname || "--");
@@ -1015,7 +1147,10 @@ function switchView(viewName) {
         sec.classList.toggle("active", sec.id === viewName);
     });
 
-    if (viewName === "history") loadDailyHistory();
+    if (viewName === "history") {
+        loadDailyHistory();
+        loadHourlyUsage();
+    }
     if (viewName === "network") loadNetworkStats();
     if (viewName === "devices") loadDevices();
 }

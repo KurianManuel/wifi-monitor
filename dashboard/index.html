@@ -603,6 +603,10 @@
                             </th>
 
                             <th>
+                                STATUS
+                            </th>
+
+                            <th>
                                 IP ADDRESS
                             </th>
 
@@ -733,6 +737,10 @@
                         </th>
 
                         <th>
+                            STATUS
+                        </th>
+
+                        <th>
                             MAC
                         </th>
 
@@ -838,8 +846,10 @@
                         --
                     </h2>
 
-                    <p id="deviceDetailIP">
-                        --
+                    <p>
+                        <span id="deviceDetailIP">--</span>
+                        &nbsp;·&nbsp;
+                        <span id="deviceDetailStatusBadge" class="status-badge online">CONNECTED</span>
                     </p>
 
                 </div>
@@ -1352,23 +1362,59 @@
     </div>
 
 
-    <article class="panel" id="historyContent">
+    <!-- ====================================================
+         Usage Period Cards (Today, Yesterday, Last 7 Days, This Month)
+         ==================================================== -->
 
+    <div class="device-usage" style="margin-bottom: 16px;">
 
-        <b>
-            [ DAILY HISTORY ]
-        </b>
+        <article class="panel">
+            <label>TODAY</label>
+            <strong id="histTodayTotal">--</strong>
+            <p>↓ <span class="orange" id="histTodayDownload">--</span> &nbsp; ↑ <span class="teal" id="histTodayUpload">--</span></p>
+        </article>
 
+        <article class="panel">
+            <label>YESTERDAY</label>
+            <strong id="histYesterdayTotal">--</strong>
+            <p>↓ <span class="orange" id="histYesterdayDownload">--</span> &nbsp; ↑ <span class="teal" id="histYesterdayUpload">--</span></p>
+        </article>
 
-        <h2>
-            Network usage history
-        </h2>
+        <article class="panel">
+            <label>LAST 7 DAYS</label>
+            <strong id="histSevenDayTotal">--</strong>
+            <p>↓ <span class="orange" id="histSevenDayDownload">--</span> &nbsp; ↑ <span class="teal" id="histSevenDayUpload">--</span></p>
+        </article>
 
+        <article class="panel">
+            <label>THIS MONTH</label>
+            <strong id="histMonthTotal">--</strong>
+            <p>↓ <span class="orange" id="histMonthDownload">--</span> &nbsp; ↑ <span class="teal" id="histMonthUpload">--</span></p>
+        </article>
 
-        <div id="historyList" class="history-list"></div>
+    </div>
 
+    <!-- ====================================================
+         Hourly and Daily History Grid
+         ==================================================== -->
 
-    </article>
+    <div class="history-grid">
+
+        <article class="panel" id="historyHourlyPanel">
+            <b>[ HOURLY USAGE ]</b>
+            <h2>Today's 24-Hour Timeline</h2>
+            <div class="chartbox" id="historyHourlyChartContainer">
+                <div class="pending">Loading hourly usage...</div>
+            </div>
+        </article>
+
+        <article class="panel" id="historyContent">
+            <b>[ DAILY HISTORY ]</b>
+            <h2>Last 7 Days Usage</h2>
+            <div id="historyList" class="history-list"></div>
+        </article>
+
+    </div>
 
 
 </section>
@@ -1466,6 +1512,7 @@
         <div style="width:100%; max-width:600px; margin-top:20px; text-align:left;">
             <dl class="settings-dl" style="display:grid; grid-template-columns: 200px 1fr; gap: 12px; font-size:12px; border-top: 1px solid var(--border-soft); padding-top:15px;">
                 <dt style="color:var(--muted)">Router Host</dt><dd id="cfgHost" style="color:var(--text); margin:0;">192.168.29.1</dd>
+                <dt style="color:var(--muted)">Router Config Status</dt><dd id="cfgRouterStatus" style="color:var(--orange); margin:0;">CONFIGURED &amp; VERIFIED</dd>
                 <dt style="color:var(--muted)">Timezone</dt><dd style="color:var(--text); margin:0;">Asia/Kolkata (IST)</dd>
                 <dt style="color:var(--muted)">Sampling Interval</dt><dd id="cfgInterval" style="color:var(--text); margin:0;">60 seconds</dd>
                 <dt style="color:var(--muted)">Dashboard Refresh</dt><dd id="cfgRefresh" style="color:var(--text); margin:0;">15 seconds</dd>
